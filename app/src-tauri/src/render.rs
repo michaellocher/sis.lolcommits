@@ -68,6 +68,14 @@ fn measure(size: f32, text: &str) -> (i32, i32) {
     (w as i32, h as i32)
 }
 
+// Where caption() puts the commit hash and "repo · branch". Shared with
+// label_rects(), so sharing can blur exactly these two labels.
+const SHA_POS: (i32, i32) = (32, 22);
+const SHA_SIZE: f32 = 52.0;
+const REPO_TOP: i32 = 34;
+const REPO_SIZE: f32 = 30.0;
+const EDGE: i32 = 32;
+
 pub fn caption(mut img: RgbImage, sha: &str, subject: &str, repo: &str, branch: &str) -> RgbImage {
     let (w, h) = (img.width() as i32, img.height() as i32);
     // commit message: big, centered, bottom
@@ -81,19 +89,43 @@ pub fn caption(mut img: RgbImage, sha: &str, subject: &str, repo: &str, branch: 
         y += line_h;
     }
     // sha top left, repo · branch top right
-    outlined(&mut img, 32, 22, 52.0, 3, sha);
+    outlined(&mut img, SHA_POS.0, SHA_POS.1, SHA_SIZE, 3, sha);
     let rb = format!("{repo} · {branch}");
-    let (tw, _) = measure(30.0, &rb);
-    outlined(&mut img, w - tw - 32, 34, 30.0, 2, &rb);
+    let (tw, _) = measure(REPO_SIZE, &rb);
+    outlined(&mut img, w - tw - EDGE, REPO_TOP, REPO_SIZE, 2, &rb);
     img
 }
 
-/// For sharing: blur the sha / repo band at the top.
-pub fn blur_band(img: &RgbImage) -> RgbImage {
+/// Boxes (x, y, w, h) around the hash and the repo label as caption() drew
+/// them, with room for the outline. Text height is taken generously from the
+/// font size because glyphs reach above and below the measured box.
+pub fn label_rects(width: u32, sha: &str, repo: &str, branch: &str) -> Vec<(u32, u32, u32, u32)> {
+    let pad = 10;
+    let (sw, _) = measure(SHA_SIZE, sha);
+    let rb = format!("{repo} · {branch}");
+    let (rw, _) = measure(REPO_SIZE, &rb);
+    let w = width as i32;
+    let rect = |x: i32, y: i32, tw: i32, size: f32| {
+        let x0 = (x - pad).max(0);
+        let y0 = (y - pad).max(0);
+        let x1 = (x + tw + pad).min(w);
+        let y1 = y + (size * 1.3) as i32 + pad;
+        (x0 as u32, y0 as u32, (x1 - x0).max(1) as u32, (y1 - y0).max(1) as u32)
+    };
+    vec![rect(SHA_POS.0, SHA_POS.1, sw, SHA_SIZE), rect(w - rw - EDGE, REPO_TOP, rw, REPO_SIZE)]
+}
+
+/// For sharing: blur only the given boxes (the hash and the repo label).
+pub fn blur_rects(img: &RgbImage, rects: &[(u32, u32, u32, u32)]) -> RgbImage {
     let mut out = img.clone();
-    let band = imageops::crop_imm(img, 0, 0, img.width(), 110.min(img.height())).to_image();
-    let blurred = imageops::blur(&band, 14.0);
-    imageops::replace(&mut out, &blurred, 0, 0);
+    for &(x, y, w, h) in rects {
+        let (w, h) = (w.min(img.width().saturating_sub(x)), h.min(img.height().saturating_sub(y)));
+        if w == 0 || h == 0 {
+            continue;
+        }
+        let part = imageops::crop_imm(img, x, y, w, h).to_image();
+        imageops::replace(&mut out, &imageops::blur(&part, 9.0), x as i64, y as i64);
+    }
     out
 }
 

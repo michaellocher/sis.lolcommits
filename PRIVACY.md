@@ -15,10 +15,10 @@ Wer die Bilder einzelner Personen nebeneinander legt, kann daraus Arbeitszeiten 
 | Anforderung | Umsetzung |
 |---|---|
 | Einwilligung, freiwillig (Art. 6 Abs. 1 lit. a DSGVO, § 26 BDSG) | Teilen ist aus, bis jede Person es selbst einschaltet. Ein Spitzname reicht als Name. Wer nicht mitmacht, hat keinen Nachteil. |
-| Jederzeit widerrufbar, echtes Löschen (Art. 7 Abs. 3, Art. 17) | In der App: Privacy › Unshare all löscht den eigenen Ordner sofort (in der Kommandozeile `lolcommits unshare --all`). „Delete all" löscht zusätzlich alles lokal. Bei Google Drive for desktop landet Gelöschtes 30 Tage im Drive-Papierkorb. |
-| Datenminimierung (Art. 5 Abs. 1 lit. c) | Hochgeladen werden nur das Bild ohne Metadaten, das Datum ohne Uhrzeit, der Name und die Commit-Nachricht. Repo und Commit-Hash sind im Bild verwischt. |
+| Jederzeit widerrufbar, echtes Löschen (Art. 7 Abs. 3, Art. 17) | In der App: Privacy › Unshare all löscht sofort alle eigenen Bilder aus allen Repo-Ordnern (in der Kommandozeile `lolcommits unshare --all`). „Delete all" löscht zusätzlich alles lokal. Bei Google Drive for desktop landet Gelöschtes 30 Tage im Drive-Papierkorb. |
+| Datenminimierung (Art. 5 Abs. 1 lit. c) | Hochgeladen werden nur das Bild ohne Metadaten, das Datum ohne Uhrzeit, der Name und die Commit-Nachricht. Repo und Commit-Hash sind im Bild verwischt. Die Repo-Ordner tragen nur dann den Repo-Namen, wenn die Person das für dieses Repo erlaubt hat; sonst landet das Bild in `other-repos`. Wichtig für Kundenprojekte. |
 | Speicherbegrenzung (Art. 5 Abs. 1 lit. e) | Geteilte Bilder laufen standardmäßig **nicht** ab, damit nichts ungewollt verschwindet. Die Frist legt das Team fest (siehe Checkliste) und stellt sie in der App ein: Settings › „Remove my shared pictures after" (`lolcommits.share.retention`). |
-| Unbeteiligte im Bild | Vor jedem Upload zeigt lolcommits genau das Bild, das hochgeladen wird. Hochgeladen wird erst, wenn beide Häkchen gesetzt sind: „niemand sonst im Bild" und „Commit-Nachricht ist okay". |
+| Unbeteiligte im Bild | Jedes Bild wird vor dem Upload so angezeigt, wie es hochgeladen wird: im Review-Stapel als Karte (Wisch nach rechts teilt, nach links bleibt es privat) oder im Teilen-Dialog mit zwei Häkchen. Vor dem ersten Wisch erklärt die App, worauf man achten soll: Hintergrund und Commit-Nachricht. Der letzte Wisch lässt sich rückgängig machen. |
 | Keine Verhaltens- oder Leistungskontrolle (§ 87 Abs. 1 Nr. 6 BetrVG) | Es gibt keine Statistiken pro Person und keine Uhrzeiten. Der Zweck ist ausschließlich Spaß und Teamkultur. |
 | Keine Biometrie, keine Emotionserkennung (Art. 9 DSGVO, Art. 5 Abs. 1 lit. f AI Act) | Es gibt keine Gesichtserkennung und keine Stimmungsanalyse. Solche Funktionen dürfen auch nicht nachgerüstet werden. |
 | Zugriff nur fürs Team | Die Bilder liegen in einer geteilten Ablage. Zugriff hat nur die Team-Gruppe, nichts ist öffentlich. |
@@ -44,7 +44,7 @@ Wer die Bilder einzelner Personen nebeneinander legt, kann daraus Arbeitszeiten 
 >
 > Wer mag, kann sein Commit-Selfie in unsere Team-Galerie stellen. Das ist freiwillig. Wer nicht mitmacht, hat keinen Nachteil.
 >
-> **Was geteilt wird:** nur Bilder, die du nach einer Vorschau selbst freigibst. Dazu kommen das Datum ohne Uhrzeit, dein angezeigter Name (Spitzname geht) und die Commit-Nachricht. Repo-Namen sind verwischt, Metadaten entfernt.
+> **Was geteilt wird:** nur Bilder, die du nach einer Vorschau selbst freigibst. Dazu kommen das Datum ohne Uhrzeit, dein angezeigter Name (Spitzname geht) und die Commit-Nachricht. Metadaten sind entfernt. Ob der Repo-Name sichtbar ist, entscheidest du pro Repo. Sonst ist er verwischt und das Bild landet unter „other-repos“.
 >
 > **Wo:** in der geteilten Ablage „lolcommits" in Google Drive. Zugriff hat nur [Team/Gruppe].
 >

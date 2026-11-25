@@ -24,7 +24,7 @@ type R<T> = Result<T, String>;
 
 /// Settings the UI may change directly. Share targets only change through the
 /// setup commands below, which test the connection first.
-const KEYS: [&str; 7] = ["device", "delay", "retention", "share.name", "share.repo", "share.retention", "share.auto"];
+const KEYS: [&str; 6] = ["device", "delay", "retention", "share.name", "share.retention", "share.auto"];
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,7 +58,11 @@ fn hook_value(app: &AppHandle) -> String {
 
 fn allow_assets(app: &AppHandle) {
     let scope = app.asset_protocol_scope();
-    let _ = scope.allow_directory(config::lol_dir(), true);
+    let dir = config::lol_dir();
+    let _ = scope.allow_directory(&dir, true);
+    // "**" doesn't match dot folders on unix, so name them explicitly
+    let _ = scope.allow_directory(dir.join(".preview"), true);
+    let _ = scope.allow_directory(dir.join(".shared"), true);
     if let Ok(d) = share::team_dir() {
         let _ = scope.allow_directory(d, true);
     }
@@ -177,17 +181,61 @@ fn known(file: &str) -> R<store::Shot> {
     store::find(file).ok_or_else(|| "unknown picture".into())
 }
 
+/// The picture exactly as it would be uploaded (blurred band, no metadata).
 #[tauri::command(async)]
-fn preview(file: String) -> R<String> {
+fn preview(app: AppHandle, file: String) -> R<String> {
+    let shot = known(&file)?;
+    allow_assets(&app);
+    share::prepare(&shot).map(|p| p.to_string_lossy().to_string())
+}
+
+#[derive(Serialize)]
+struct RepoChoice {
+    repo: String,
+    /// true: shown by name, false: hidden (other-repos), null: not asked yet
+    show: Option<bool>,
+    folder: String,
+}
+
+/// Every repo with photos, and whether it may appear by name in the team gallery.
+#[tauri::command(async)]
+fn repo_choices() -> Vec<RepoChoice> {
+    let mut repos: Vec<String> = store::shots().into_iter().map(|s| s.repo).collect();
+    repos.extend(share::repo_choices().into_iter().map(|r| r.0));
+    repos.sort_by_key(|r| r.to_lowercase());
+    repos.dedup();
+    repos
+        .into_iter()
+        .map(|r| {
+            let show = share::repo_choice(&r);
+            let folder = if show == Some(true) { share::repo_folder(&r) } else { share::OTHER.to_string() };
+            RepoChoice { repo: r, show, folder }
+        })
+        .collect()
+}
+
+/// Asked once per repo before its first share; changeable in Settings.
+/// Applies to pictures shared from now on.
+#[tauri::command(async)]
+fn set_repo_choice(repo: String, show: bool) -> R<()> {
+    share::set_repo_choice(&repo, show)
+}
+
+/// Review: swipe left keeps a picture on this computer and out of the review.
+#[tauri::command(async)]
+fn set_private(app: AppHandle, file: String, private: bool) -> R<()> {
     known(&file)?;
-    share::clear_previews();
-    share::prepare(&file).map(|p| p.to_string_lossy().to_string())
+    store::set_private(&file, private).map_err(|e| e.to_string())?;
+    tray::refresh(&app);
+    Ok(())
 }
 
 #[tauri::command(async)]
 fn share_shot(app: AppHandle, file: String) -> R<()> {
     let r = share::upload(&known(&file)?);
-    share::clear_previews();
+    if r.is_ok() {
+        let _ = store::set_private(&file, false);
+    }
     tray::refresh(&app);
     r
 }
@@ -408,10 +456,7 @@ fn on_menu(app: &AppHandle, id: &str) {
         "open" => show_main(app, Some("shots")),
         "settings" => show_main(app, Some("settings")),
         "error" => show_main(app, Some("settings")),
-        "share-last" => {
-            show_main(app, Some("shots"));
-            let _ = app.emit("share-last", ());
-        }
+        "review" => show_main(app, Some("review")),
         "test" => {
             let a = app.clone();
             std::thread::spawn(move || {
@@ -472,12 +517,14 @@ fn main() {
             get_state, set_config, enable_global, disable_global, pause, resume, camera_permission, devices,
             test_shot, preview, share_shot, unshare, forget, team, wrapped, timelapse, drive_folders, use_folder,
             rclone_status, brew_install, rclone_connect, rclone_use, disconnect_sharing, finish_setup,
-            set_autostart, first_name, install_cli, privacy_doc
+            set_autostart, first_name, install_cli, privacy_doc, set_private,
+            repo_choices, set_repo_choice
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let handle = app.handle().clone();
+            share::clear_previews();
             allow_assets(&handle);
             let menu = tray::build_menu(&handle)?;
             TrayIconBuilder::with_id("main")

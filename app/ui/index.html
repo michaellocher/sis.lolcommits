@@ -90,9 +90,9 @@ dialog::backdrop{background:#000000d0}
 .panel .meta{color:var(--mut);font-size:12px}
 .nav-btn{position:fixed;top:50%;transform:translateY(-50%);background:#ffffff22;color:#fff;border:0;width:44px;height:44px;border-radius:50%;font-size:22px}
 .nav-btn:hover{background:#ffffff44}.nav-btn.l{left:14px}.nav-btn.r{right:14px}
-.modal{background:var(--card);border-radius:var(--r);padding:22px;width:min(700px,94vw)}
+.modal{background:var(--card);border-radius:var(--r);padding:20px 22px;width:min(640px,94vw);max-height:calc(100vh - 40px);overflow:auto}
 .modal h3{margin:0 0 6px}.modal p{color:var(--mut);margin:0 0 14px}
-.modal img{width:100%;border-radius:10px;display:block;margin-bottom:14px;min-height:120px;background:var(--card2)}
+.modal img{width:100%;max-height:min(42vh,340px);object-fit:contain;border-radius:10px;display:block;margin-bottom:12px;min-height:120px;background:var(--card2)}
 .checks label{display:flex;gap:10px;align-items:center;padding:5px 0;font-weight:500}
 .modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
 .doc{width:min(860px,94vw);max-height:86vh;overflow:auto;-webkit-user-select:text;user-select:text}
@@ -108,6 +108,40 @@ dialog::backdrop{background:#000000d0}
 .toast{background:var(--fg);color:var(--bg);padding:9px 15px;border-radius:11px;font-weight:600;font-size:13px;box-shadow:var(--shadow);max-width:90vw;animation:up .2s}
 .toast.err{background:var(--bad);color:#fff}
 @keyframes up{from{transform:translateY(8px);opacity:0}}
+
+/* ---------------------------------------------------------------- review */
+nav a .n{display:inline-block;min-width:18px;padding:0 5px;margin-left:5px;border-radius:99px;background:var(--acc);color:var(--acc-fg);font-size:11px;line-height:18px;text-align:center}
+.badge.priv{background:var(--card2);color:var(--mut)}
+.review{display:flex;flex-direction:column;align-items:center;gap:16px}
+.review .hint{color:var(--mut);font-size:13px;text-align:center}
+.stack{--w:min(600px,92vw,calc((100vh - 330px) * 16 / 9));position:relative;width:var(--w);height:calc(var(--w) * 9 / 16 + 92px)}
+.rcard{position:absolute;inset:0;background:var(--card);border-radius:18px;box-shadow:0 2px 6px #0002,0 14px 40px #0003;overflow:hidden;touch-action:none;transition:transform .25s ease,opacity .25s ease;transform-origin:50% 90%}
+.rcard.drag{transition:none;cursor:grabbing}
+.rcard .pic{width:100%;aspect-ratio:16/9;background:var(--card2) center/cover no-repeat;display:grid;place-items:center;color:var(--mut)}
+.rcard .info{padding:12px 16px}
+.rcard .msg{font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rcard .meta{color:var(--mut);font-size:12px;margin-top:3px}
+.rcard.back1{transform:translateY(14px) scale(.95);opacity:.9}
+.rcard.back2{transform:translateY(28px) scale(.9);opacity:.6}
+.stamp{position:absolute;top:24px;padding:2px 12px;border:5px solid;border-radius:12px;font-size:44px;letter-spacing:3px;opacity:0;pointer-events:none;background:#0004}
+.stamp.hot{left:22px;color:#21d36b;border-color:#21d36b;transform:rotate(-14deg)}
+.stamp.not{right:22px;color:#ff4d5e;border-color:#ff4d5e;transform:rotate(14deg)}
+.rbtns{display:flex;gap:22px;align-items:center}
+.round{width:66px;height:66px;border-radius:50%;border:1px solid var(--line);background:var(--card);box-shadow:var(--shadow);font-size:28px;display:grid;place-items:center;transition:transform .12s}
+.round:hover:not(:disabled){transform:scale(1.08)}
+.round:disabled{opacity:.35}
+.round.small{width:46px;height:46px;font-size:18px}
+.round.not{color:#ff4d5e}.round.hot{color:#21d36b}
+.repo-row{display:flex;align-items:center;gap:10px;padding:6px 0}
+.repo-row .nm{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.repo-row .st{color:var(--mut);font-size:12px}
+.review.asking .stack{--w:min(600px,92vw,calc((100vh - 410px) * 16 / 9))}
+.ask{width:min(600px,92vw,calc((100vh - 410px) * 16 / 9));min-width:min(420px,92vw);background:color-mix(in srgb,var(--acc) 22%,var(--card));border-radius:14px;padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.ask .q{flex:1;min-width:220px}
+.consent{width:min(560px,92vw);background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:22px 24px}
+.consent h2{font-size:34px;margin:0 0 10px}
+.consent .rule{display:flex;gap:12px;align-items:flex-start;margin:10px 0}
+.consent .rule b{font-size:22px;line-height:1}
 
 /* ---------------------------------------------------------------- wizard */
 #wizard{position:fixed;inset:0;z-index:40;background:var(--bg);display:flex;flex-direction:column;overflow:auto}
@@ -145,6 +179,7 @@ dialog::backdrop{background:#000000d0}
   <div class="brand impact">lolcommits<small id="ver"></small></div>
   <nav>
     <a data-v="shots">My shots</a>
+    <a data-v="review">Review<span class="n" id="reviewCount" hidden></span></a>
     <a data-v="team">Team</a>
     <a data-v="settings">Settings</a>
     <a data-v="privacy">Privacy</a>
@@ -173,6 +208,42 @@ dialog::backdrop{background:#000000d0}
     <div class="empty" id="shotsEmpty" hidden>
       <h2 class="impact">no lolcommits yet</h2>
       <div>Commit something. The menu bar icon flashes and the picture shows up here.</div>
+    </div>
+  </section>
+
+  <section id="v-review" hidden>
+    <div class="empty" id="reviewSetup" hidden>
+      <h2 class="impact">hot or not?</h2>
+      <div>Swipe through your new photos: right shares one with your team, left keeps it on this computer. Set up the team gallery first.</div>
+      <div class="btns"><button class="btn primary big" data-act="setup-team">Set up team gallery</button></div>
+    </div>
+    <div class="review" id="reviewConsent" hidden>
+      <div class="consent">
+        <h2 class="impact">hot or not?</h2>
+        <div class="rule"><b>👉</b><div><b style="font-size:14px">Swipe right – hot.</b> The picture is shared exactly as shown on the card: repo name blurred, no metadata, to <span id="rcTarget"></span> as “<span id="rcName"></span>”.</div></div>
+        <div class="rule"><b>👈</b><div><b style="font-size:14px">Swipe left – not.</b> It stays on this computer and won't be asked again.</div></div>
+        <div class="rule"><b>👀</b><div>Before you swipe right, check the background (anyone else in it?) and the commit message. You can undo the last swipe.</div></div>
+        <div style="margin-top:16px"><button class="btn primary big" id="rcGo">Let's go</button></div>
+      </div>
+    </div>
+    <div class="review" id="reviewMain" hidden>
+      <div class="ask" id="repoAsk" hidden>
+        <div class="q"><b>New repo: <span id="askRepo"></span></b><br><span class="count">May your team see this repo's name? Asked once per repo.</span></div>
+        <button class="btn" id="askHide">Keep hidden</button><button class="btn primary" id="askShow">Show name</button>
+      </div>
+      <div class="stack" id="stack"></div>
+      <div class="rbtns">
+        <button class="round small" id="rUndo" title="Undo (⌘Z)">↶</button>
+        <button class="round not" id="rNot" title="Not – keep private (←)">✕</button>
+        <button class="round hot" id="rHot" title="Hot – share (→)">♥</button>
+        <span class="count" id="rLeft" style="width:46px;text-align:center"></span>
+      </div>
+      <div class="hint" id="rHint"></div>
+    </div>
+    <div class="empty" id="reviewDone" hidden>
+      <h2 class="impact">all caught up</h2>
+      <div>New photos show up here after your next commits.</div>
+      <div class="btns"><button class="btn" id="rUndo2">↶ Undo last swipe</button><button class="btn" onclick="route('team')">See the team gallery</button></div>
     </div>
   </section>
 
@@ -220,8 +291,9 @@ dialog::backdrop{background:#000000d0}
           <div class="field"><label>Shared to</label><div class="row"><button class="btn" data-act="setup-team">Change…</button><button class="btn danger" id="disconnectBtn">Disconnect</button></div>
             <div class="hint" id="teamTarget"></div></div>
           <div class="field"><label for="s-name">Your name</label><input id="s-name" data-key="share.name" placeholder="a nickname is fine"></div>
-          <div class="field"><label for="s-repo">Show repo names</label><input type="checkbox" class="switch" id="s-repo" data-key="share.repo">
-            <div class="hint">Off: repo and commit hash are blurred in shared pictures. Keep it off for client work.</div></div>
+          <div class="field"><label>Repos shown by name</label><span></span>
+            <div class="hint">Shown: pictures go to a folder named after the repo, label visible. Hidden: folder “other-repos”, repo and hash blurred – keep client work hidden. Applies to pictures shared from now on.</div>
+            <div id="repoList" style="grid-column:1/-1"></div></div>
           <div class="field"><label for="s-auto">Share every photo automatically</label><input type="checkbox" class="switch" id="s-auto" data-key="share.auto">
             <div class="hint">Skips the preview – nobody checks the background or the commit message.</div></div>
           <div class="field"><label for="s-sret">Remove my shared pictures after</label><input id="s-sret" data-key="share.retention" type="number" min="0" placeholder="never (days)">
@@ -353,7 +425,7 @@ dialog::backdrop{background:#000000d0}
         <div class="sub-h">Defaults</div>
         <ul class="facts" style="color:var(--mut)">
           <li>You confirm every picture with a preview before it is shared.</li>
-          <li>Repo names and commit hashes are blurred.</li>
+          <li>Pictures are sorted into folders by repo – you decide per repo whether its name may be shown. Otherwise it goes to “other-repos”, blurred.</li>
           <li>Shared pictures stay until you take them back. You can set an expiry in Settings.</li>
         </ul>
       </div>
@@ -467,7 +539,8 @@ const pausedText = () => !S.pausedUntil ? "" : S.pausedUntil > 4e12 ? "Paused un
 // ------------------------------------------------------------------ state
 async function load() {
   S = await api("get_state");
-  renderHeader(); renderShots(); renderSettings(); renderPrivacy(); renderTeamShell();
+  S.repos = await api("repo_choices").catch(() => []);
+  renderHeader(); renderShots(); renderSettings(); renderPrivacy(); renderTeamShell(); renderReview();
 }
 function renderHeader() {
   $("#ver").textContent = S.version;
@@ -502,7 +575,7 @@ function drawShots() {
   $("#shotsEmpty").hidden = S.shots.length > 0;
   $("#count").textContent = S.shots.length ? list.length + (list.length === 1 ? " shot" : " shots") : "";
   $("#grid").replaceChildren(...list.map((s, i) => h("figure", {class: "shot", onclick: () => openViewer("shots", i)},
-    s.shared ? h("span", {class: "badge"}, "shared") : null,
+    s.shared ? h("span", {class: "badge"}, "shared") : s.private ? h("span", {class: "badge priv"}, "private") : null,
     h("img", {src: src(s.file), loading: "lazy", alt: s.subject}),
     h("figcaption", {},
       h("div", {class: "msg"}, s.subject),
@@ -549,12 +622,20 @@ function refreshViewer(file) {
 }
 
 // ------------------------------------------------------------------ actions
+const repoChoice = repo => (S.repos.find(r => r.repo === repo) || {}).show;   // true / false / null
+async function askRepo(repo) {
+  const r = await confirmDlg({title: "Show “" + repo + "” by name?", go: "Show name",
+    text: "Your team would see the repo name, and the picture goes to the folder “" + repo + "”. Choose “Cancel” to keep it hidden: folder “other-repos”, name blurred. Asked once per repo, changeable in Settings."});
+  await api("set_repo_choice", {repo, show: !!r});
+  S.repos = await api("repo_choices");
+}
 async function shareFlow(s) {
+  if (repoChoice(s.repo) == null) await askRepo(s.repo);
   const dlg = $("#shareDlg");
   $$(".sc").forEach(c => c.checked = false); $("#shareGo").disabled = true;
   $("#shareImg").removeAttribute("src");
   $("#shareInfo").textContent = "This is exactly what goes to " + S.shareLabel + " as “" + cfg("share.name") + "”"
-    + (cfg("share.repo") === "true" ? ", without metadata." : " – repo name blurred, no metadata.");
+    + (repoChoice(s.repo) ? " in the folder “" + s.repo + "”, without metadata." : " in “other-repos” – repo name blurred, no metadata.");
   dlg.showModal();
   await busy(null, async () => { $("#shareImg").src = src(await api("preview", {file: s.file}), 1); });
   $("#shareGo").onclick = () => busy($("#shareGo"), async () => {
@@ -650,6 +731,12 @@ function renderSettings() {
   $("#teamOff").hidden = S.sharing; $("#teamOn").hidden = !S.sharing;
   $("#teamSub").textContent = S.sharing ? "Shared as “" + cfg("share.name") + "”." : "Not set up. Pictures stay on this computer.";
   $("#teamTarget").textContent = S.shareLabel;
+  $("#repoList").replaceChildren(...(S.repos || []).map(r => h("div", {class: "repo-row"},
+    h("span", {class: "nm"}, r.repo),
+    h("span", {class: "st"}, r.show == null ? "not asked yet" : r.show ? "→ " + r.folder : "→ other-repos"),
+    h("input", {type: "checkbox", class: "switch", checked: !!r.show, "aria-label": "Show " + r.repo + " by name",
+      onchange: e => busy(null, async () => { await api("set_repo_choice", {repo: r.repo, show: e.target.checked}); toast("Saved ✓"); PREV.clear(); rSig = ""; await load(); })}))));
+  if (!(S.repos || []).length) $("#repoList").replaceChildren(h("span", {class: "count"}, "No repos yet."));
   for (const el of $$("[data-key]")) {
     if (document.activeElement === el) continue;
     const v = cfg(el.dataset.key);
@@ -690,7 +777,8 @@ $("#disconnectBtn").onclick = async () => {
 function renderPrivacy() {
   $("#p-dir").textContent = S.dir;
   $("#p-target").textContent = S.sharing ? "Shared to " + S.shareLabel + " as “" + cfg("share.name") + "”." : "Sharing is off.";
-  $("#p-repo").textContent = cfg("share.repo") === "true" ? "with repo name and commit hash visible" : "with repo name and commit hash blurred";
+  const shown = S.repos.filter(r => r.show).map(r => r.repo);
+  $("#p-repo").textContent = "with repo name and commit hash blurred – except for repos you chose to show by name" + (shown.length ? " (" + shown.join(", ") + ")" : " (none yet)");
   const days = +cfg("share.retention", "0");
   $("#p-keep").textContent = days > 0 ? "It is removed after " + days + " days." : "It stays until you take it back (no expiry set).";
   const n = S.shots.filter(s => s.shared).length;
@@ -719,6 +807,148 @@ document.addEventListener("click", e => {
   if (act === "setup-team") openWizard("team", true);
   if (act === "wizard") openWizard("welcome");
   if (act === "privacy-doc") openPrivacy();
+});
+
+// ------------------------------------------------------------------ review (hot or not)
+const reviewQueue = () => S.shots.filter(s => !s.shared && !s.private);
+const PREV = new Map();           // file → preview path (exactly what gets uploaded)
+let RHIST = [], rBusy = false, rSig = "";
+const consented = () => { try { return localStorage.getItem("lolReviewConsent") === "1"; } catch { return false; } };
+
+function renderReview() {
+  const q = reviewQueue();
+  $("#reviewCount").hidden = !S.sharing || !q.length; $("#reviewCount").textContent = q.length;
+  const consent = S.sharing && q.length && !consented();
+  $("#reviewSetup").hidden = S.sharing;
+  $("#reviewConsent").hidden = !consent;
+  $("#reviewMain").hidden = !S.sharing || !q.length || consent;
+  $("#reviewDone").hidden = !S.sharing || q.length > 0;
+  $("#rUndo2").hidden = !RHIST.length;
+  $("#rcTarget").textContent = S.shareLabel; $("#rcName").textContent = cfg("share.name");
+  $("#rHint").textContent = "→ share to " + S.shareLabel + "   ·   ← keep private";
+  $("#rLeft").textContent = q.length + " left";
+  $("#rUndo").disabled = !RHIST.length;
+  const sig = q.slice(0, 3).map(s => s.file).join("|");
+  if (sig === rSig || !S.sharing) return;
+  rSig = sig;
+  const cards = q.slice(0, 3).map((s, i) => {
+    const pic = h("div", {class: "pic"}, "…");
+    const card = h("div", {class: "rcard" + (i ? " back" + i : "")},
+      pic,
+      h("div", {class: "stamp hot impact"}, "hot"),
+      h("div", {class: "stamp not impact"}, "not"),
+      h("div", {class: "info"}, h("div", {class: "msg"}, s.subject), h("div", {class: "meta"}, s.repo + " · " + s.branch + " · " + fmtTs(s.ts))));
+    card.dataset.file = s.file;
+    loadPreview(s.file).then(p => { pic.textContent = ""; pic.style.backgroundImage = `url("${src(p)}")`; })
+      .catch(e => { pic.textContent = "preview failed: " + e; });
+    return card;
+  });
+  $("#stack").replaceChildren(...cards.reverse());   // top card last = on top
+  updateRepoAsk();
+  const top = $("#stack").lastElementChild;
+  if (top) attachDrag(top);
+}
+function loadPreview(file) {
+  if (!PREV.has(file)) PREV.set(file, api("preview", {file}).catch(e => { PREV.delete(file); throw e; }));
+  return PREV.get(file);
+}
+$("#rcGo").onclick = () => { try { localStorage.setItem("lolReviewConsent", "1"); } catch {} rSig = ""; renderReview(); };
+
+function setDrag(card, dx, dy) {
+  card.style.transform = `translate(${dx}px, ${dy * 0.25}px) rotate(${dx / 18}deg)`;
+  const p = Math.max(-1, Math.min(1, dx / 120));
+  card.querySelector(".stamp.hot").style.opacity = Math.max(0, p);
+  card.querySelector(".stamp.not").style.opacity = Math.max(0, -p);
+}
+function snapBack(card) {
+  card.classList.remove("drag"); card.style.transform = "";
+  card.querySelectorAll(".stamp").forEach(x => x.style.opacity = 0);
+}
+function attachDrag(card) {
+  let sx = 0, sy = 0, dx = 0, dragging = false, wheelX = 0, wheelT = 0;
+  card.addEventListener("pointerdown", e => {
+    if (rBusy) return;
+    dragging = true; sx = e.clientX; sy = e.clientY; dx = 0;
+    card.setPointerCapture(e.pointerId); card.classList.add("drag");
+  });
+  card.addEventListener("pointermove", e => { if (dragging) { dx = e.clientX - sx; setDrag(card, dx, e.clientY - sy); } });
+  const end = () => {
+    if (!dragging) return; dragging = false;
+    if (Math.abs(dx) > 110) decide(dx > 0); else snapBack(card);
+  };
+  card.addEventListener("pointerup", end); card.addEventListener("pointercancel", end);
+  // two-finger swipe on a trackpad
+  card.addEventListener("wheel", e => {
+    if (rBusy || Math.abs(e.deltaX) < Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    wheelX -= e.deltaX; card.classList.add("drag"); setDrag(card, wheelX, 0);
+    clearTimeout(wheelT);
+    wheelT = setTimeout(() => { const x = wheelX; wheelX = 0; if (Math.abs(x) > 110) decide(x > 0); else snapBack(card); }, 140);
+  }, {passive: false});
+}
+function topShot() {
+  const card = $("#stack").lastElementChild;
+  return card && S.shots.find(s => s.file === card.dataset.file);
+}
+function updateRepoAsk() {
+  const s = topShot(), undecided = !!s && repoChoice(s.repo) == null;
+  $("#repoAsk").hidden = !undecided || $("#reviewMain").hidden;
+  if (s) $("#askRepo").textContent = s.repo;
+  $("#rHot").disabled = undecided;
+  $("#reviewMain").classList.toggle("asking", !$("#repoAsk").hidden);
+}
+async function answerRepo(show) {
+  const s = topShot(); if (!s) return;
+  await busy(null, async () => {
+    await api("set_repo_choice", {repo: s.repo, show});
+    S.repos = await api("repo_choices");
+    // previews of this repo change (blurred or not): drop them and redraw
+    S.shots.filter(x => x.repo === s.repo).forEach(x => PREV.delete(x.file));
+    rSig = ""; renderReview(); renderSettings(); renderPrivacy();
+  });
+}
+$("#askShow").onclick = () => answerRepo(true);
+$("#askHide").onclick = () => answerRepo(false);
+async function decide(hot) {
+  const card = $("#stack").lastElementChild;
+  if (!card || rBusy) return;
+  if (hot && repoChoice(topShot()?.repo) == null) { snapBack(card); toast("First decide whether the repo name may be shown"); return; }
+  rBusy = true;
+  const file = card.dataset.file, shot = S.shots.find(s => s.file === file);
+  card.classList.remove("drag");
+  card.style.transform = `translate(${hot ? 140 : -140}%, 30px) rotate(${hot ? 24 : -24}deg)`;
+  card.style.opacity = "0";
+  card.querySelector(hot ? ".stamp.hot" : ".stamp.not").style.opacity = 1;
+  try {
+    await Promise.all([hot ? api("share_shot", {file}) : api("set_private", {file, private: true}), new Promise(r => setTimeout(r, 260))]);
+    if (shot) { if (hot) shot.shared = true; else shot.private = true; }
+    RHIST.push({file, hot});
+    if (hot) toast("🔥 Shared with your team");
+  } catch (e) {
+    toast(e, true); snapBack(card); card.style.opacity = "";
+  } finally {
+    rBusy = false; rSig = ""; renderReview(); drawShots(); renderPrivacy();
+  }
+}
+async function undo() {
+  const last = RHIST.pop(); if (!last || rBusy) return;
+  rBusy = true;
+  try {
+    if (last.hot) await api("unshare", {file: last.file}); else await api("set_private", {file: last.file, private: false});
+    const shot = S.shots.find(s => s.file === last.file);
+    if (shot) { shot.shared = false; shot.private = false; }
+    if (last.hot) toast("Taken back ✓");
+  } catch (e) { toast(e, true); RHIST.push(last); }
+  finally { rBusy = false; rSig = ""; renderReview(); drawShots(); renderPrivacy(); }
+}
+$("#rHot").onclick = () => decide(true);
+$("#rNot").onclick = () => decide(false);
+$("#rUndo").onclick = $("#rUndo2").onclick = undo;
+document.addEventListener("keydown", e => {
+  if (view !== "review" || document.querySelector("dialog[open]") || !$("#wizard").hidden || $("#reviewMain").hidden && !(e.metaKey && e.key === "z")) return;
+  if (e.key === "ArrowRight") { e.preventDefault(); decide(true); }
+  if (e.key === "ArrowLeft") { e.preventDefault(); decide(false); }
+  if ((e.metaKey || e.ctrlKey) && e.key === "z") { e.preventDefault(); undo(); }
 });
 
 // ------------------------------------------------------------------ privacy guide
@@ -883,7 +1113,7 @@ $("#wzFinish").onclick = e => busy(e.currentTarget, async () => {
 
 // ------------------------------------------------------------------ routing, events
 function route(v) {
-  view = ["shots", "team", "settings", "privacy"].includes(v) ? v : "shots";
+  view = ["shots", "review", "team", "settings", "privacy"].includes(v) ? v : "shots";
   $$("main > section").forEach(s => s.hidden = s.id !== "v-" + view);
   $$("nav a").forEach(a => a.classList.toggle("on", a.dataset.v === view));
   if (view === "team") loadTeam(true, $("#syncBtn"));
@@ -898,10 +1128,7 @@ $$("nav a").forEach(a => a.onclick = () => route(a.dataset.v));
   ev.listen("shots-changed", () => { if (!document.querySelector("dialog[open]")) load(); });
   ev.listen("navigate", e => { if ($("#wizard").hidden) route(e.payload); });
   ev.listen("show-file", e => showMedia("Test photo", e.payload));
-  ev.listen("share-last", async () => {
-    await load(); route("shots");
-    const s = S.shots[0]; if (s && !s.shared && S.sharing) { list = filteredShots(); shareFlow(s); }
-  });
+
 })();
 </script>
 </body>

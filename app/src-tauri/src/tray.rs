@@ -169,8 +169,10 @@ pub fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         let fv = MenuItem::with_id(app, "pause-forever", "Until I resume", true, None::<&str>)?;
         items.push(Box::new(Submenu::with_id_and_items(app, "pause", "Pause", true, &[&h1, &tm, &fv])?));
     }
-    if share::configured() && shots.first().map(|s| !s.shared).unwrap_or(false) {
-        items.push(Box::new(MenuItem::with_id(app, "share-last", "Share last photo…", true, None::<&str>)?));
+    let to_review = shots.iter().filter(|s| !s.shared && !s.private).count();
+    if share::configured() && to_review > 0 {
+        let label = if to_review == 1 { "Review 1 new photo…".to_string() } else { format!("Review {to_review} new photos…") };
+        items.push(Box::new(MenuItem::with_id(app, "review", label, true, None::<&str>)?));
     }
     items.push(Box::new(sep2));
     items.push(Box::new(settings));

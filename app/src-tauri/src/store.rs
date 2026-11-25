@@ -15,6 +15,8 @@ pub struct Shot {
     pub subject: String,
     pub file: String,
     pub shared: bool,
+    /// swiped left in the review: stays on this computer, not offered again
+    pub private: bool,
 }
 
 pub fn index_path() -> PathBuf {
@@ -22,6 +24,9 @@ pub fn index_path() -> PathBuf {
 }
 pub fn shared_path() -> PathBuf {
     config::lol_dir().join("shared.tsv")
+}
+pub fn private_path() -> PathBuf {
+    config::lol_dir().join("private.tsv")
 }
 pub fn log(msg: &str) {
     let dir = config::lol_dir();
@@ -56,13 +61,29 @@ pub fn shared_rows() -> Vec<(String, String)> {
     tsv(&shared_path(), 2).into_iter().map(|r| (r[0].clone(), r[1].clone())).collect()
 }
 
+pub fn private_files() -> Vec<String> {
+    tsv(&private_path(), 1).into_iter().map(|r| r[0].clone()).collect()
+}
+
+pub fn set_private(file: &str, private: bool) -> std::io::Result<()> {
+    let mut files: Vec<String> = private_files().into_iter().filter(|f| f != file).collect();
+    if private {
+        files.push(file.to_string());
+    }
+    fs::create_dir_all(config::lol_dir())?;
+    let rows: Vec<Vec<String>> = files.into_iter().map(|f| vec![f]).collect();
+    write_lines(&private_path(), &rows)
+}
+
 pub fn shots() -> Vec<Shot> {
     let shared: Vec<String> = shared_rows().into_iter().map(|r| r.0).collect();
+    let private = private_files();
     let mut v: Vec<Shot> = tsv(&index_path(), 6)
         .into_iter()
         .filter(|r| Path::new(&r[5]).is_file())
         .map(|r| Shot {
             shared: shared.contains(&r[5]),
+            private: private.contains(&r[5]),
             ts: r[0].clone(),
             repo: r[1].clone(),
             branch: r[2].clone(),
@@ -99,6 +120,9 @@ pub fn append(shot: &Shot) -> std::io::Result<()> {
 pub fn remove(file: &str) -> std::io::Result<()> {
     let _ = fs::remove_file(file);
     let rows: Vec<_> = tsv(&index_path(), 6).into_iter().filter(|r| r[5] != file).collect();
+    if private_path().exists() {
+        let _ = set_private(file, false);
+    }
     write_lines(&index_path(), &rows)
 }
 
@@ -139,7 +163,7 @@ pub fn forget_all() {
         let _ = fs::remove_file(&r[5]);
     }
     let dir = config::lol_dir();
-    for f in ["index.tsv", "shared.tsv", "lolcommits.log", "test.jpg", "gallery.html", "gallery-shared.html", "timelapse.mp4"] {
+    for f in ["index.tsv", "shared.tsv", "private.tsv", "lolcommits.log", "test.jpg", "gallery.html", "gallery-shared.html", "timelapse.mp4"] {
         let _ = fs::remove_file(dir.join(f));
     }
     for d in [".shared", ".preview"] {

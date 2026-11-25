@@ -4,10 +4,11 @@ A webcam selfie for every git commit, with the commit message on it in big meme 
 Remake of the old [lolcommits](https://github.com/lolcommits/lolcommits) Ruby gem as a menu bar app for macOS (and Linux).
 
 - **Download, open, done:** a setup assistant handles the camera, the git hook and the team gallery. No terminal, no Homebrew.
-- **Lives in the menu bar:** the icon flashes when it takes a photo. From the menu you can pause (1 hour, until tomorrow, until you resume), take a test photo, or share your latest one.
+- **Lives in the menu bar:** the icon flashes when it takes a photo. From the menu you can pause (1 hour, until tomorrow, until you resume), take a test photo, or review your new photos.
 - **Doesn't slow down commits:** `git commit` returns immediately and the app takes the photo in the background.
 - **One camera permission:** the app owns the camera, so your terminal, IDE and git client don't each ask for it.
-- **Team gallery, privacy first:** share to a Google shared drive. You pick each picture after a preview, and one click takes it all back ([details](#team-gallery)).
+- **Hot or not:** new photos wait in a review stack. Swipe right to share one with your team, left to keep it to yourself. Undo is ⌘Z.
+- **Team gallery, privacy first:** a Google shared drive with one folder per repo. Client repos stay anonymous, and one click takes everything back ([details](#team-gallery)).
 - **Extras:** gallery with search, timelapse video, year-in-review contact sheet ("wrapped").
 
 ## Install
@@ -38,11 +39,23 @@ Use a shared drive rather than someone's My Drive, so the pictures belong to the
 - **With Google Drive for desktop:** its shared drives show up right away, with no sign-in.
 - **Without it:** "Sign in with Google" opens the browser. If your Workspace blocks rclone's sign-in, an admin has to allow it ([rclone docs](https://rclone.org/drive/#making-your-own-client-id)).
 
-**What gets uploaded:**
-- the picture without metadata, with the repo name and commit hash blurred
-- the date (no time of day), your name and the commit message
+**Review:** new photos land in the Review tab (the menu bar shows "Review N new photos…").
+Each card shows the picture exactly as it would be uploaded.
+- **Swipe right / → / ♥:** shares it.
+- **Swipe left / ← / ✕:** keeps it on your computer, and it won't come up again.
+- **⌘Z:** undoes the last swipe.
 
-Each person writes only to their own folder.
+**Sorted by repo:** the first time you share from a repo, the app asks whether your team may see its name.
+- **Yes:** pictures go to `<repo>/` and the repo label stays readable.
+- **No:** they go to `other-repos/` with the repo label and commit hash blurred.
+
+You can change the choice per repo in Settings. It applies to pictures you share after that.
+
+**What gets uploaded:**
+- the picture without metadata, with the hash and repo label blurred unless the repo is shown by name
+- one small sidecar file per picture: the date (no time of day), your name, the repo (if shown) and the commit message
+
+Files are named `<date>-<person>-<random>`, so several people can share into the same folder without conflicts.
 Shared pictures stay until you take them back, unless you set an expiry in Settings.
 Your team should agree on a period, see [PRIVACY.md](PRIVACY.md).
 
@@ -51,9 +64,9 @@ Your team should agree on a period, see [PRIVACY.md](PRIVACY.md).
 Faces plus commit times are personal data, and in a company they are employee data.
 lolcommits is built so that the team gallery stays fun and doesn't turn into monitoring:
 
-- opt-in per person, a preview with two checks before every upload, nicknames allowed
+- opt-in per person, every picture reviewed exactly as uploaded, nicknames allowed
 - withdrawal is one click (Privacy › Unshare all)
-- no metadata, repo names blurred by default
+- no metadata, repo names hidden unless you allow them per repo
 - dates only, no times, no statistics per person
 - no face or emotion recognition, ever
 
@@ -99,9 +112,10 @@ Everything is plain git config, shared by the app and the command line:
 | `lolcommits.retention` | keep | delete local pictures after N days |
 | `lolcommits.share.target` | off | a folder (Drive for desktop, NAS) or `rclone:<remote>:<path>` |
 | `lolcommits.share.name` | – | your name in the gallery, also the folder name |
-| `lolcommits.share.repo` | `false` | `true` shows repo names in shared pictures |
 | `lolcommits.share.retention` | `0` (keep) | delete your shared pictures after N days |
-| `lolcommits.share.auto` | `false` | upload every photo without preview |
+| `lolcommits.share.auto` | `false` | upload every photo without review (repos not asked yet stay hidden) |
+
+Per-repo choices live in `~/.lolcommits/repo-names.tsv` (`repo`, tab, `show` or `hide`).
 
 Pictures land in `~/.lolcommits/<repo>/<timestamp>-<sha>.jpg`, along with an `index.tsv` (time, repo, branch, sha, subject, file).
 Failures are logged to `~/.lolcommits/lolcommits.log`.

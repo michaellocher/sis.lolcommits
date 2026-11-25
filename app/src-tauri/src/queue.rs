@@ -57,6 +57,7 @@ fn process(app: &AppHandle, job: &Path) {
             subject: subject.into(),
             file: out.to_string_lossy().to_string(),
             shared: false,
+            private: false,
         };
         store::append(&shot).map_err(|e| e.to_string())?;
         store::prune_local();

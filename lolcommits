@@ -57,7 +57,7 @@ Config (git config [--global] lolcommits.<key> <value>):
   share.target     where to share: rclone:<remote>:<path> (Google Drive, S3, ...),
                    <host>:<path> (ssh) or a directory. Unset = never share.
   share.name       your name in the team gallery (a nickname is fine)
-  share.repo       true shows the repo name; default false blurs it
+  (repo names: asked once per repo on the first share, stored in ~/.lolcommits/repo-names.tsv)
   share.retention  delete your shared pictures after N days (default 0 = keep)
   share.auto       true uploads every shot without preview (default false)
 
@@ -130,7 +130,7 @@ cmd_status() {
   [ -f "$INDEX" ] && info "shots:   $(wc -l <"$INDEX" | tr -d ' ')"
   if [ "$(share_mode)" = off ]; then info "share:   off"
   else
-    info "share:   $(cfg share.target) as \"$(cfg share.name)\" (auto: $(cfg share.auto false), repo names: $(cfg share.repo false), keep: $( [ "$(cfg share.retention 0)" -gt 0 ] 2>/dev/null && echo "$(cfg share.retention 0) days" || echo forever))"
+    info "share:   $(cfg share.target) as \"$(cfg share.name)\" (auto: $(cfg share.auto false), repos shown by name: $( [ -f "$REPO_NAMES" ] && grep -c '	show$' "$REPO_NAMES" || echo 0), keep: $( [ "$(cfg share.retention 0)" -gt 0 ] 2>/dev/null && echo "$(cfg share.retention 0) days" || echo forever))"
     [ -f "$SHARED" ] && info "shared:  $(wc -l <"$SHARED" | tr -d ' ') from this machine"
   fi
 }
@@ -260,7 +260,7 @@ cmd_capture() {
       # auto-share only when explicitly switched on (git config lolcommits.share.auto true)
       if [ "$(cfg share.auto false)" = true ] && [ "$(share_mode)" != off ] && [ -n "$(cfg share.name)" ]; then
         local img; img="$(mktemp -d)/share.jpg"
-        { share_prepare "$out" "$img" && share_upload "$img" "$out" "$repo" "$subject"; } \
+        { share_prepare "$out" "$img" "$repo" && share_upload "$img" "$out" "$repo" "$subject"; } \
           || printf '%s auto-share failed for %s %s\n' "$now" "$repo" "$sha" >>"$LOG"
         rm -rf "$(dirname "$img")"
       fi
@@ -398,11 +398,15 @@ cmd_gallery() {
 # Opt-in upload into a team folder. lolcommits.share.target picks the backend:
 #   rclone:<remote>:<path>   any rclone remote – Google Drive, S3, ...
 #   <host>:<path>            a server over ssh
-#   <path>                   a local or mounted directory
-# Remote layout: <person>/<YYYYmmdd>-<random>.jpg + <person>/meta.tsv
-# (date, name, repo or "-", subject, file). Nothing else leaves the machine.
-SHARED="$LOLDIR/shared.tsv"   # local file \t remote path
+#   <path>                   a local or mounted directory (Google Drive for desktop)
+# Layout, sorted by repo (the same as lolcommits.app):
+#   <repo>/<YYYYmmdd>-<person>-<rand>.jpg  +  .tsv sidecar (date, name, repo or "-", subject)
+# Repos not allowed by name go to other-repos/ with the label blurred.
+# One sidecar per picture, so people sharing at the same time never edit one file.
+SHARED="$LOLDIR/shared.tsv"         # local file \t remote path
+REPO_NAMES="$LOLDIR/repo-names.tsv" # repo \t show|hide – asked once per repo
 CACHE="$LOLDIR/.shared"
+OTHER_REPOS="other-repos"
 RCLONE_FLAGS=(--drive-use-trash=false)   # really delete on Google Drive, no 30-day trash
 
 share_mode() {
@@ -428,6 +432,22 @@ require_share() { [ "$(share_mode)" != off ] || die 'no share target – e.g. gi
 days_ago() { date -v-"$1"d +%F 2>/dev/null || date -d "-$1 days" +%F; }
 abspath() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$PWD" "$1" ;; esac; }
 
+# repo_choice <repo> → show | hide | (empty: not asked yet)
+repo_choice() { [ -f "$REPO_NAMES" ] && awk -F'\t' -v r="$1" '$1==r{v=$2} END{printf "%s", v}' "$REPO_NAMES"; }
+set_repo_choice() {
+  mkdir -p "$LOLDIR"
+  { [ -f "$REPO_NAMES" ] && awk -F'\t' -v r="$1" '$1!=r' "$REPO_NAMES"; printf '%s\t%s\n' "$1" "$2"; } >"$REPO_NAMES.tmp" \
+    && mv -f "$REPO_NAMES.tmp" "$REPO_NAMES"
+}
+# folder name for a repo: keeps case, dots and dashes; never hidden or empty
+repo_folder() {
+  local f; f="$(printf '%s' "$1" | LC_ALL=C sed -E 's/[^A-Za-z0-9._-]/-/g; s/^\.+//')"
+  case "$f" in ""|"$OTHER_REPOS") f=repo ;; esac
+  printf '%s' "$f"
+}
+# folder a picture of <repo> goes to
+share_folder() { if [ "$(repo_choice "$1")" = show ]; then repo_folder "$1"; else printf '%s' "$OTHER_REPOS"; fi; }
+
 # share_put <local file> <remote rel path>
 share_put() {
   local b; b="$(share_base)"
@@ -437,33 +457,28 @@ share_put() {
     local)  mkdir -p "$(dirname "$b/$2")" && cp "$1" "$b/$2" ;;
   esac
 }
-# share_cat <rel> – prints the file, nothing if it doesn't exist
-share_cat() {
-  local b; b="$(share_base)"
-  case "$(share_mode)" in
-    rclone) rclone cat "$b/$1" 2>/dev/null ;;
-    ssh)    ssh "${b%%:*}" "cat $(fq "${b#*:}/$1") 2>/dev/null" </dev/null ;;
-    local)  cat "$b/$1" 2>/dev/null ;;
-  esac
-  return 0
-}
+# share_rm <rel> – also drops the repo folder once it is empty
 share_rm() {
   local b; b="$(share_base)"
   case "$(share_mode)" in
-    rclone) rclone deletefile "${RCLONE_FLAGS[@]}" "$b/$1" ;;
-    ssh)    ssh "${b%%:*}" "rm -f $(fq "${b#*:}/$1")" </dev/null ;;
-    local)  rm -f "$b/$1" ;;
+    rclone) rclone deletefile "${RCLONE_FLAGS[@]}" "$b/$1" 2>/dev/null || ! rclone lsf "$b/$1" >/dev/null 2>&1 ;;
+    ssh)    ssh "${b%%:*}" "rm -f $(fq "${b#*:}/$1"); rmdir $(fq "$(dirname "${b#*:}/$1")") 2>/dev/null; true" </dev/null ;;
+    local)  rm -f "$b/$1" && { rmdir "$(dirname "$b/$1")" 2>/dev/null; true; } ;;
   esac
 }
-share_purge() {   # remove a whole person folder
-  [ -n "$1" ] || return 1
+# all pictures in the target as <folder>/<file>.jpg
+share_ls() {
   local b; b="$(share_base)"
   case "$(share_mode)" in
-    rclone) rclone lsf "$b/$1" >/dev/null 2>&1 || return 0   # already gone
-            rclone purge "${RCLONE_FLAGS[@]}" "$b/$1" ;;
-    ssh)    ssh "${b%%:*}" "rm -rf $(fq "${b#*:}/$1")" </dev/null ;;
-    local)  rm -rf "${b:?}/$1" ;;
+    rclone) rclone lsf -R --files-only --max-depth 2 --include '*.jpg' "$b" 2>/dev/null ;;
+    ssh)    ssh "${b%%:*}" "cd $(fq "${b#*:}") 2>/dev/null && find . -mindepth 2 -maxdepth 2 -name '*.jpg'" </dev/null | sed 's|^\./||' ;;
+    local)  ( cd "$b" 2>/dev/null && find . -mindepth 2 -maxdepth 2 -name '*.jpg' | sed 's|^\./||' ) ;;
   esac
+}
+# my pictures, as <folder>/<YYYYmmdd>-<me>-<rand>  (no extension)
+share_mine() {
+  local me; me="$(share_me)"
+  share_ls | grep -E "(^|/)[0-9]{8}-$me-[0-9a-f]{8}\.jpg$" | sed 's/\.jpg$//' | sort
 }
 share_pull() {    # mirror the team folder into $1 (deletions propagate)
   local b; b="$(share_base)"; mkdir -p "$1"
@@ -473,46 +488,40 @@ share_pull() {    # mirror the team folder into $1 (deletions propagate)
   esac
 }
 
-# share_prepare <in.jpg> <out.jpg> – fresh JPEG without metadata; the repo/sha
-# band at the top is blurred unless lolcommits.share.repo is true
+# share_prepare <in.jpg> <out.jpg> <repo> – fresh JPEG without metadata; the
+# label band at the top is blurred unless the repo may be shown by name
 share_prepare() {
   local vf="null"
-  [ "$(cfg share.repo false)" = true ] || vf="split[a][b];[b]crop=iw:110:0:0,boxblur=20:2[t];[a][t]overlay=0:0"
+  [ "$(repo_choice "$3")" = show ] || vf="split[a][b];[b]crop=iw:110:0:0,boxblur=20:2[t];[a][t]overlay=0:0"
   ffmpeg -hide_banner -loglevel error -y -i "$1" -vf "$vf" -map_metadata -1 -fflags +bitexact -flags:v +bitexact -q:v 3 "$2"
 }
 
 # share_upload <prepared.jpg> <local file> <repo> <subject>
 share_upload() {
-  local img="$1" f="$2" repo="$3" subject="$4" me name d rel tmp
+  local img="$1" f="$2" repo="$3" subject="$4" me name d stem side shown
   name="$(cfg share.name)"; me="$(share_me)" || return 1
   d="$(basename "$f")"; d="${d:0:8}"
-  rel="$me/$d-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n').jpg"
-  [ "$(cfg share.repo false)" = true ] || repo="-"
-  tmp="$(mktemp)"
-  share_cat "$me/meta.tsv" >"$tmp"
-  printf '%s\t%s\t%s\t%s\t%s\n' "${d:0:4}-${d:4:2}-${d:6:2}" "$(printf '%s' "$name" | tr '\t' ' ')" \
-    "$repo" "$subject" "$(basename "$rel")" >>"$tmp"
-  share_put "$img" "$rel" && share_put "$tmp" "$me/meta.tsv" && printf '%s\t%s\n' "$f" "$rel" >>"$SHARED"
-  local rc=$?; rm -f "$tmp"
-  [ $rc = 0 ] && share_prune
-  return $rc
+  stem="$(share_folder "$repo")/$d-$me-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
+  shown="-"; [ "$(repo_choice "$repo")" = show ] && shown="$(printf '%s' "$repo" | tr '\t' ' ')"
+  side="$(mktemp)"
+  printf '%s\t%s\t%s\t%s\n' "${d:0:4}-${d:4:2}-${d:6:2}" "$(printf '%s' "$name" | tr '\t' ' ')" "$shown" "$subject" >"$side"
+  if share_put "$img" "$stem.jpg" && share_put "$side" "$stem.tsv"; then
+    printf '%s\t%s\n' "$f" "$stem.jpg" >>"$SHARED"; rm -f "$side"; share_prune; return 0
+  fi
+  share_rm "$stem.jpg" 2>/dev/null; rm -f "$side"; return 1
 }
 
 # drop own shared pictures older than lolcommits.share.retention days (default 0 = keep)
 share_prune() {
-  local days me cutoff tmp; days="$(cfg share.retention 0)"
+  local days cutoff stem; days="$(cfg share.retention 0)"
   [ "$days" -gt 0 ] 2>/dev/null || return 0
-  me="$(share_me)"; cutoff="$(days_ago "$days")"; tmp="$(mktemp)"
-  share_cat "$me/meta.tsv" >"$tmp"
-  if awk -F'\t' -v c="$cutoff" '$1<c{f=1}END{exit !f}' "$tmp"; then
-    awk -F'\t' -v c="$cutoff" '$1<c{print $5}' "$tmp" | while IFS= read -r x; do
-      share_rm "$me/$x"
-      [ -f "$SHARED" ] && grep -vF "	$me/$x" "$SHARED" >"$SHARED.tmp"; mv -f "$SHARED.tmp" "$SHARED" 2>/dev/null
-    done
-    awk -F'\t' -v c="$cutoff" '$1>=c' "$tmp" >"$tmp.new" && share_put "$tmp.new" "$me/meta.tsv"
-    rm -f "$tmp.new"
-  fi
-  rm -f "$tmp"
+  cutoff="$(days_ago "$days" | tr -d -)"
+  share_mine | while IFS= read -r stem; do
+    local fn="${stem##*/}"
+    [ "${fn:0:8}" \< "$cutoff" ] || continue
+    share_rm "$stem.jpg"; share_rm "$stem.tsv"
+    [ -f "$SHARED" ] && { awk -F'\t' -v r="$stem.jpg" '$2!=r' "$SHARED" >"$SHARED.tmp"; mv -f "$SHARED.tmp" "$SHARED"; }
+  done
 }
 
 cmd_share() {
@@ -523,36 +532,45 @@ cmd_share() {
   local row; row="$(awk -F'\t' -v f="$f" '$6==f' "$INDEX" | tail -1)"
   [ -n "$row" ] || die "not a lolcommit: $f"
   [ -f "$SHARED" ] && cut -f1 "$SHARED" | grep -qxF "$f" && die "already shared: $f"
+  local repo; repo="$(cut -f2 <<<"$row")"
+  if [ -z "$(repo_choice "$repo")" ] && [ -z "$yes" ]; then
+    # asked once per repo: client projects should stay anonymous
+    printf 'May your team see the repo name "%s"? (folder "%s" instead of "%s") [y/N] ' "$repo" "$(repo_folder "$repo")" "$OTHER_REPOS"
+    local yn=""; read -r yn </dev/tty || true
+    case "$yn" in y|Y|yes|j|J|ja) set_repo_choice "$repo" show ;; *) set_repo_choice "$repo" hide ;; esac
+  fi
   local tmp; tmp="$(mktemp -d)"
-  share_prepare "$f" "$tmp/share.jpg" || { rm -rf "$tmp"; die "could not prepare $f"; }
+  share_prepare "$f" "$tmp/share.jpg" "$repo" || { rm -rf "$tmp"; die "could not prepare $f"; }
   if [ -z "$yes" ]; then
     # show exactly what gets uploaded – check for people in the background
     info "$tmp/share.jpg"; open_file "$tmp/share.jpg"
-    printf 'Share this picture to %s as "%s"? [y/N] ' "$(cfg share.target)" "$(cfg share.name)"
+    printf 'Share this picture to %s/%s as "%s"? [y/N] ' "$(cfg share.target)" "$(share_folder "$repo")" "$(cfg share.name)"
     local ans=""; read -r ans </dev/tty || true
     case "$ans" in y|Y|yes|j|J|ja) ;; *) rm -rf "$tmp"; info "not shared."; return 0 ;; esac
   fi
-  share_upload "$tmp/share.jpg" "$f" "$(cut -f2 <<<"$row")" "$(cut -f5 <<<"$row")"
+  share_upload "$tmp/share.jpg" "$f" "$repo" "$(cut -f5 <<<"$row")"
   local rc=$?; rm -rf "$tmp"
   [ $rc = 0 ] && info "shared ✓" || die "upload failed"
 }
 
 cmd_unshare() {
   require_share
-  local me; me="$(share_me)"
+  share_me >/dev/null
   if [ "${1:-}" = --all ]; then
-    share_purge "$me" || die "could not remove $me from $(cfg share.target)"
-    rm -f "$SHARED"; info "removed all your shared pictures from $(cfg share.target) ✓"; return
+    # every picture of mine, also those shared from other computers
+    local stem n=0
+    while IFS= read -r stem; do
+      share_rm "$stem.jpg" || die "could not delete $stem.jpg"; share_rm "$stem.tsv"; n=$((n + 1))
+    done < <(share_mine)
+    rm -f "$SHARED"; info "removed $n shared pictures of yours from $(cfg share.target) ✓"; return
   fi
-  [ -s "$SHARED" ] || die "nothing shared from this machine (use --all to clear your folder anyway)"
+  [ -s "$SHARED" ] || die "nothing shared from this machine (use --all to remove all of yours anyway)"
   local f="${1:-last}" rel
   if [ "$f" = last ]; then f="$(tail -1 "$SHARED" | cut -f1)"; else f="$(abspath "$f")"; fi
   rel="$(awk -F'\t' -v f="$f" '$1==f{print $2}' "$SHARED" | tail -1)"
   [ -n "$rel" ] || die "not shared: $f"
   share_rm "$rel" || die "could not delete $rel"
-  local tmp; tmp="$(mktemp)"
-  share_cat "$me/meta.tsv" | awk -F'\t' -v x="$(basename "$rel")" '$5!=x' >"$tmp"
-  share_put "$tmp" "$me/meta.tsv"; rm -f "$tmp"
+  share_rm "${rel%.jpg}.tsv"
   awk -F'\t' -v f="$f" '$1!=f' "$SHARED" >"$SHARED.tmp" && mv -f "$SHARED.tmp" "$SHARED"
   info "unshared ✓ $f"
 }
@@ -563,14 +581,14 @@ cmd_forget() {
     --all)
       if [ "${2:-}" != --yes ]; then
         printf 'Delete ALL lolcommits in %s%s? [y/N] ' "$LOLDIR" \
-          "$( [ "$(share_mode)" != off ] && [ -n "$(cfg share.name)" ] && printf ' and your folder in %s' "$(cfg share.target)")"
+          "$( [ "$(share_mode)" != off ] && [ -n "$(cfg share.name)" ] && printf ' and your pictures in %s' "$(cfg share.target)")"
         local ans=""; read -r ans </dev/tty || true
         case "$ans" in y|Y|yes|j|J|ja) ;; *) info "nothing deleted."; return 0 ;; esac
       fi
       if [ "$(share_mode)" != off ] && [ -n "$(cfg share.name)" ]; then ( cmd_unshare --all ) || true; fi
       [ -f "$INDEX" ] && cut -f6 "$INDEX" | while IFS= read -r f; do rm -f "$f"; done
-      rm -f "$INDEX" "$SHARED" "$LOG" "$LOLDIR"/gallery*.html "$LOLDIR"/timelapse*.mp4 "$LOLDIR"/wrapped-*.jpg "$LOLDIR/test.jpg"
-      rm -rf "$CACHE"
+      rm -f "$INDEX" "$SHARED" "$REPO_NAMES" "$LOLDIR/private.tsv" "$LOG" "$LOLDIR"/gallery*.html "$LOLDIR"/timelapse*.mp4 "$LOLDIR"/wrapped-*.jpg "$LOLDIR/test.jpg"
+      rm -rf "$CACHE" "$LOLDIR/.preview"
       find "$LOLDIR" -mindepth 1 -type d -empty -delete 2>/dev/null
       info "all lolcommits deleted ✓" ;;
     "") die "usage: lolcommits forget <file|last|--all [--yes]>" ;;
@@ -601,10 +619,10 @@ gallery_shared() {
   cmd_sync
   local cutoff="0000" days; days="$(cfg share.retention 0)"
   [ "$days" -gt 0 ] 2>/dev/null && cutoff="$(days_ago "$days")"
-  local out="$LOLDIR/gallery-shared.html" m tdir; tdir="$(team_dir)"
-  for m in "$tdir"/*/meta.tsv; do
-    [ -f "$m" ] || continue
-    awk -F'\t' -v d="$(dirname "$m")" -v c="$cutoff" 'BEGIN{OFS="\t"} $1>=c {print $1,$2,($3==""?"-":$3),"-",$4,d"/"$5}' "$m"
+  local out="$LOLDIR/gallery-shared.html" side tdir; tdir="$(team_dir)"
+  for side in "$tdir"/*/*.tsv; do
+    [ -f "$side" ] && [ -f "${side%.tsv}.jpg" ] || continue
+    awk -F'\t' -v f="${side%.tsv}.jpg" -v c="$cutoff" 'BEGIN{OFS="\t"} NR==1 && $1>=c {print $1,$2,($3==""?"-":$3),"-",$4,f}' "$side"
   done | sort -r | gallery_html "lolcommits · team" "everyone" >"$out"
   info "$out"; open_file "$out"
 }
