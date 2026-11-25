@@ -27,9 +27,17 @@ jobs:
         run: |
           awk -v v="$V" '$0 ~ "^## "v"( |$)" {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md
           [ -s notes.md ] || echo "See CHANGELOG.md." > notes.md
+          # links to repo files like (PRIVACY.md) need the full URL on the release page
+          sed -i -E "s#\]\(([A-Za-z0-9_./-]+\.md)\)#](https://github.com/$GITHUB_REPOSITORY/blob/$V/\1)#g" notes.md
           printf '\n**Download:** the `.dmg` for macOS (Apple Silicon and Intel), the `.AppImage` or `.deb` for Linux. Open it and follow the setup.\n' >> notes.md
           gh release create "$V" --draft --verify-tag --title "lolcommits $V" --notes-file notes.md
-          echo "id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$V\") | .id" | head -1)" >> "$GITHUB_OUTPUT"
+          # the release list lags behind right after creating, so ask for this one, with retries
+          for i in 1 2 3 4 5; do
+            id=$(gh release view "$V" --json databaseId --jq .databaseId 2>/dev/null) && [ -n "$id" ] && break
+            sleep 3
+          done
+          [ -n "$id" ] || { echo "::error::release $V not found after creating it"; exit 1; }
+          echo "id=$id" >> "$GITHUB_OUTPUT"
 
   build:
     needs: release
@@ -99,6 +107,11 @@ jobs:
         run: |
           mkdir -p resources && cp ../../lolcommits ../../PRIVACY.md resources/
           LOLCOMMITS_TEST_PATTERN=1 cargo test
+
+      - name: Release id present
+        # tauri-action silently skips uploads without one
+        if: github.ref_type == 'tag' && needs.release.outputs.id == ''
+        run: echo "::error::no release id from the release job" && exit 1
 
       - uses: tauri-apps/tauri-action@v0
         env:
