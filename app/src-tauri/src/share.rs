@@ -105,7 +105,7 @@ fn shows_repo(repo: &str) -> bool {
 
 fn rclone(args: &[&str]) -> Result<String, String> {
     let bin = config::which("rclone").ok_or("rclone is not installed")?;
-    let out = config::cmd(bin.to_str().unwrap()).args(args).args(RCLONE_FLAGS).output().map_err(|e| e.to_string())?;
+    let out = config::cmd(bin.to_str().unwrap()).args(args.iter().take(1)).args(RCLONE_FLAGS).args(args.iter().skip(1)).output().map_err(|e| e.to_string())?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).to_string())
     } else {
@@ -137,10 +137,26 @@ fn rm(t: &Target, rel: &str) -> Result<(), String> {
             }
             Ok(())
         }
-        Target::Rclone(base) => match rclone(&["deletefile", &format!("{base}/{rel}")]) {
-            Err(e) if !e.contains("not found") => Err(e),
-            _ => Ok(()),
-        },
+        Target::Rclone(base) => rclone_rm(&format!("{base}/{rel}")),
+    }
+}
+
+/// Delete a file on an rclone remote. Only managers of a Google shared drive may
+/// delete for good (others get a 404), so fall back to Drive's trash, which
+/// content managers may use. Ok once the file is gone.
+fn rclone_rm(path: &str) -> Result<(), String> {
+    let first = match rclone(&["deletefile", path]) {
+        Ok(_) => return Ok(()),
+        Err(e) => e,
+    };
+    let _ = rclone(&["deletefile", "--drive-use-trash=true", path]);
+    match rclone(&["lsf", path]) {
+        Ok(out) if out.trim().is_empty() => Ok(()),
+        Err(e) if e.contains("not found") => Ok(()),
+        _ => Err(format!(
+            "can't delete files there, so you couldn't take pictures back. \
+             Ask a manager of the shared drive to make you at least \"Content manager\". ({first})"
+        )),
     }
 }
 
@@ -348,7 +364,7 @@ pub fn probe(t: &Target) -> Result<(), String> {
     let res = put(t, &tmp, &rel).and_then(|_| match t {
         // probe file sits in the target root – remove it directly
         Target::Folder(base) => fs::remove_file(base.join(&rel)).map_err(|e| e.to_string()),
-        Target::Rclone(base) => rclone(&["deletefile", &format!("{base}/{rel}")]).map(|_| ()),
+        Target::Rclone(base) => rclone_rm(&format!("{base}/{rel}")),
     });
     let _ = fs::remove_file(tmp);
     res.map_err(|e| format!("can't write there: {e}"))
