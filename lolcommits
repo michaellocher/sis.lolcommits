@@ -4,7 +4,7 @@
 # Runs on macOS (avfoundation) and Linux (v4l2).
 set -u
 
-VERSION="0.1.0"
+VERSION="0.3.0"
 LOLDIR="${LOLCOMMITS_DIR:-$(git config --get lolcommits.dir 2>/dev/null || echo "$HOME/.lolcommits")}"
 LOLDIR="${LOLDIR/#\~/$HOME}"
 INDEX="$LOLDIR/index.tsv"
@@ -32,11 +32,17 @@ Usage: lolcommits <command> [options]
   status                show hook + config state
   test                  take a test shot right now and open it
   last                  open the latest lolcommit
-  gallery               build an HTML gallery and open it
+  gallery [--shared]    build an HTML gallery and open it (--shared: the team folder)
   timelapse [repo]      render an mp4 of all shots (or one repo)
   wrapped [year]        contact sheet of a year's commits (default: this year)
   devices               list cameras
   doctor                check dependencies
+  ui                    open lolcommits.app
+
+  share [file|last] [-y]      preview, then upload a picture to the team folder
+  unshare [file|last|--all]   remove shared pictures (--all: your whole folder)
+  sync                        download the team folder (used by gallery --shared)
+  forget <file|last|--all>    delete pictures locally and their shared copies
 
 Config (git config [--global] lolcommits.<key> <value>):
   device    camera: macOS index/name (default 0), Linux path (default /dev/video0)
@@ -45,6 +51,15 @@ Config (git config [--global] lolcommits.<key> <value>):
   font      path to a .ttf (default: Impact, else DejaVu Sans Bold)
   dir       where pictures go (default ~/.lolcommits)
   enabled   set to false to pause in one repo without touching hooks
+  pausedUntil  unix time until which no photos are taken (set by the app)
+  retention delete local pictures after N days (default: keep)
+
+  share.target     where to share: rclone:<remote>:<path> (Google Drive, S3, ...),
+                   <host>:<path> (ssh) or a directory. Unset = never share.
+  share.name       your name in the team gallery (a nickname is fine)
+  share.repo       true shows the repo name; default false blurs it
+  share.retention  delete your shared pictures after N days (default 0 = keep)
+  share.auto       true uploads every shot without preview (default false)
 
 Skip a single commit with LOLCOMMITS_SKIP=1 git commit ...
 EOF
@@ -113,6 +128,11 @@ cmd_status() {
     info "paused:  $( [ "$(cfg enabled true)" = false ] && echo yes || echo no )"
   fi
   [ -f "$INDEX" ] && info "shots:   $(wc -l <"$INDEX" | tr -d ' ')"
+  if [ "$(share_mode)" = off ]; then info "share:   off"
+  else
+    info "share:   $(cfg share.target) as \"$(cfg share.name)\" (auto: $(cfg share.auto false), repo names: $(cfg share.repo false), keep: $( [ "$(cfg share.retention 0)" -gt 0 ] 2>/dev/null && echo "$(cfg share.retention 0) days" || echo forever))"
+    [ -f "$SHARED" ] && info "shared:  $(wc -l <"$SHARED" | tr -d ' ') from this machine"
+  fi
 }
 
 # ---------------------------------------------------------------- capture
@@ -172,7 +192,7 @@ render() {
     vf+="drawtext=${common}:textfile=$(fq "$tmp/sha.txt"):fontsize=52:x=32:y=24,"
     vf+="drawtext=${common}:textfile=$(fq "$tmp/repo.txt"):fontsize=28:borderw=2:x=w-text_w-32:y=34"
     ffmpeg -hide_banner -loglevel error -y "${args[@]}" \
-      -ss "$(cfg delay 1.5)" -frames:v 1 -vf "$vf" -q:v 3 "$out" || rc=$?
+      -ss "$(cfg delay 1.5)" -frames:v 1 -vf "$vf" -map_metadata -1 -fflags +bitexact -flags:v +bitexact -q:v 3 "$out" || rc=$?
   else
     # two passes: grab with ffmpeg, caption with ImageMagick (e.g. Homebrew ffmpeg has no freetype)
     ffmpeg -hide_banner -loglevel error -y "${args[@]}" -ss "$(cfg delay 1.5)" -frames:v 1 \
@@ -186,7 +206,7 @@ render() {
       "$(imagick)" "$tmp/raw.jpg" ${fa[@]+"${fa[@]}"} \
         -fill black -stroke black -strokewidth 8 "${cap[@]}" \
         -fill white -stroke none "${cap[@]}" \
-        -quality 88 "$out" || rc=$?
+        -strip -quality 88 "$out" || rc=$?
     fi
   fi
   rm -rf "$tmp"
@@ -204,16 +224,28 @@ cmd_capture() {
   # called by git as post-commit hook: return immediately, shoot in background
   [ -n "${LOLCOMMITS_SKIP:-}" ] && return 0
   [ "$(cfg enabled true)" = false ] && return 0
+  [ "$(cfg pausedUntil 0)" -gt "$(date +%s)" ] 2>/dev/null && return 0
   local gitdir; gitdir="$(git rev-parse --git-dir 2>/dev/null)" || return 0
   # no selfie storm during rebase / cherry-pick sequences
   [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ] || [ -f "$gitdir/sequencer/todo" ] && return 0
-  command -v ffmpeg >/dev/null 2>&1 || return 0
-
   local sha subject repo branch
   sha="$(git rev-parse --short=10 HEAD)"
   subject="$(git log -1 --format=%s)"
   repo="$(basename "$(git rev-parse --show-toplevel)")"
   branch="$(git branch --show-current 2>/dev/null)"; branch="${branch:-detached}"
+
+  # with lolcommits.app installed the app takes the photo: one camera permission,
+  # menu bar animation, no ffmpeg needed. We only leave a job in the queue.
+  local app; app="$(app_bundle)"
+  if [ -n "$app" ]; then
+    mkdir -p "$LOLDIR/queue"
+    local job; job="$LOLDIR/queue/$(date +%Y%m%d-%H%M%S)-$sha.tsv"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(iso_now)" "$repo" "$branch" "$sha" \
+      "$(printf '%s' "$subject" | tr '\t\n' '  ')" >"$job.tmp" && mv "$job.tmp" "$job"
+    app_running || launch_app "$app"
+    return 0
+  fi
+  command -v ffmpeg >/dev/null 2>&1 || return 0
 
   mkdir -p "$LOLDIR/$repo"
   local out="$LOLDIR/$repo/$(date +%Y%m%d-%H%M%S)-$sha.jpg"
@@ -222,8 +254,16 @@ cmd_capture() {
 
   (
     if render "${inargs[@]}" -- "$out" "$sha" "$subject" "$repo" "$branch"; then
-      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "$repo" "$branch" "$sha" \
-        "$(printf '%s' "$subject" | tr '\t' ' ')" "$out" >>"$INDEX"
+      subject="$(printf '%s' "$subject" | tr '\t' ' ')"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "$repo" "$branch" "$sha" "$subject" "$out" >>"$INDEX"
+      prune_local
+      # auto-share only when explicitly switched on (git config lolcommits.share.auto true)
+      if [ "$(cfg share.auto false)" = true ] && [ "$(share_mode)" != off ] && [ -n "$(cfg share.name)" ]; then
+        local img; img="$(mktemp -d)/share.jpg"
+        { share_prepare "$out" "$img" && share_upload "$img" "$out" "$repo" "$subject"; } \
+          || printf '%s auto-share failed for %s %s\n' "$now" "$repo" "$sha" >>"$LOG"
+        rm -rf "$(dirname "$img")"
+      fi
     else
       printf '%s capture failed for %s %s\n' "$now" "$repo" "$sha" >>"$LOG"
     fi
@@ -265,6 +305,18 @@ cmd_doctor() {
   else info "ffmpeg: ✗ missing"; ok=0; fi
   info "font:   $(font_file || true)"
   info "dir:    $LOLDIR"
+  case "$(share_mode)" in
+    off) info "share:  off" ;;
+    rclone)
+      local remote; remote="$(share_base)"; remote="${remote%%:*}:"
+      if ! command -v rclone >/dev/null 2>&1; then info "share:  ✗ rclone missing (brew/apt install rclone)"; ok=0
+      elif ! rclone listremotes 2>/dev/null | grep -qxF "$remote"; then info "share:  ✗ rclone remote $remote not configured (run: rclone config)"; ok=0
+      else info "share:  $(cfg share.target) (rclone $(rclone version 2>/dev/null | head -1 | awk '{print $2}'))"; fi ;;
+    *)
+      if command -v rsync >/dev/null 2>&1; then info "share:  $(cfg share.target) ($(share_mode))"
+      else info "share:  ✗ rsync missing"; ok=0; fi ;;
+  esac
+  [ "$(share_mode)" != off ] && [ -z "$(cfg share.name)" ] && { info "share:  ✗ lolcommits.share.name not set"; ok=0; }
   [ $ok = 1 ] && info "all good ✓" || exit 1
 }
 
@@ -279,14 +331,15 @@ cmd_last() {
 
 html_escape() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
 
-cmd_gallery() {
-  require_index
-  local out="$LOLDIR/gallery.html"
+# gallery_html <title> <all-label>, rows on stdin (newest first):
+# date \t group \t label \t badge \t subject \t file   ("-" = empty)
+gallery_html() {
+  local title="$1" all="$2"
   {
-    cat <<'EOF'
+    sed -e "s/TITLE/$(printf '%s' "$title" | html_escape)/" -e "s/ALL/$all/" <<'EOF'
 <!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>lolcommits</title>
+<title>TITLE</title>
 <style>
 :root{--bg:#f6f5f2;--fg:#1d1d1f;--mut:#6e6e73;--card:#fff}
 @media (prefers-color-scheme:dark){:root{--bg:#121214;--fg:#f2f2f2;--mut:#9a9aa0;--card:#1c1c1f}}
@@ -302,21 +355,22 @@ code{color:var(--fg)}
 dialog{padding:0;border:0;background:transparent;max-width:95vw}dialog img{max-height:90vh;width:auto;cursor:zoom-out}
 dialog::backdrop{background:#000c}
 </style></head><body>
-<header><h1>lolcommits</h1><span id="n"></span>
-<select id="repo"><option value="">all repos</option></select>
+<header><h1>TITLE</h1><span id="n"></span>
+<select id="repo"><option value="">ALL</option></select>
 <input id="q" type="search" placeholder="search messages…"></header>
 <main id="g">
 EOF
-    # newest first
-    sort -r "$INDEX" | while IFS="$(printf '\t')" read -r ts repo branch sha subject file; do
+    while IFS="$(printf '\t')" read -r ts group label badge subject file; do
       [ -f "$file" ] || continue
-      local e_sub e_repo
+      local e_sub e_grp e_lab="" e_badge=""
       e_sub="$(printf '%s' "$subject" | html_escape)"
-      e_repo="$(printf '%s' "$repo" | html_escape)"
+      e_grp="$(printf '%s' "$group" | html_escape)"
+      [ "$label" = - ] || e_lab=" · $(printf '%s' "$label" | html_escape)"
+      [ "$badge" = - ] || e_badge="<code>$(printf '%s' "$badge" | html_escape)</code> · "
       printf '<figure data-repo="%s" data-msg="%s"><img loading="lazy" src="file://%s" alt="%s">' \
-        "$e_repo" "$e_sub" "$file" "$e_sub"
-      printf '<figcaption><span><b>%s</b> · %s</span><span><code>%s</code> · <time datetime="%s">%s</time></span></figcaption></figure>\n' \
-        "$e_repo" "$(printf '%s' "$branch" | html_escape)" "$sha" "$ts" "${ts%T*}"
+        "$e_grp" "$e_sub" "$file" "$e_sub"
+      printf '<figcaption><span><b>%s</b>%s</span><span>%s<time datetime="%s">%s</time></span></figcaption></figure>\n' \
+        "$e_grp" "$e_lab" "$e_badge" "$ts" "${ts%T*}"
     done
     cat <<'EOF'
 </main><dialog id="d"><img id="di" alt=""></dialog>
@@ -329,8 +383,239 @@ const d=document.getElementById('d'),di=document.getElementById('di');
 document.getElementById('g').onclick=e=>{if(e.target.tagName==='IMG'){di.src=e.target.src;d.showModal()}};d.onclick=()=>d.close();
 </script></body></html>
 EOF
-  } >"$out"
+  }
+}
+
+cmd_gallery() {
+  if [ "${1:-}" = --shared ]; then gallery_shared; return; fi
+  require_index
+  local out="$LOLDIR/gallery.html"
+  sort -r "$INDEX" | gallery_html lolcommits "all repos" >"$out"
   info "$out"; open_file "$out"
+}
+
+# ---------------------------------------------------------------- sharing
+# Opt-in upload into a team folder. lolcommits.share.target picks the backend:
+#   rclone:<remote>:<path>   any rclone remote – Google Drive, S3, ...
+#   <host>:<path>            a server over ssh
+#   <path>                   a local or mounted directory
+# Remote layout: <person>/<YYYYmmdd>-<random>.jpg + <person>/meta.tsv
+# (date, name, repo or "-", subject, file). Nothing else leaves the machine.
+SHARED="$LOLDIR/shared.tsv"   # local file \t remote path
+CACHE="$LOLDIR/.shared"
+RCLONE_FLAGS=(--drive-use-trash=false)   # really delete on Google Drive, no 30-day trash
+
+share_mode() {
+  case "$(cfg share.target)" in
+    "") echo off ;;
+    rclone:*) echo rclone ;;
+    /*|~*|.*) echo local ;;
+    *:*) echo ssh ;;
+    *) echo local ;;
+  esac
+}
+share_base() { local t; t="$(cfg share.target)"; t="${t#rclone:}"; printf '%s' "${t/#\~/$HOME}"; }
+slug() {
+  printf '%s' "$1" | sed -e 's/ä/ae/g;s/Ä/ae/g;s/ö/oe/g;s/Ö/oe/g;s/ü/ue/g;s/Ü/ue/g;s/ß/ss/g' \
+    | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g'
+}
+share_me() {
+  local n; n="$(slug "$(cfg share.name)")"
+  [ -n "$n" ] || die 'set a display name first (a nickname is fine): git config --global lolcommits.share.name "Your Name"'
+  printf '%s' "$n"
+}
+require_share() { [ "$(share_mode)" != off ] || die 'no share target – e.g. git config --global lolcommits.share.target rclone:gdrive:lolcommits'; }
+days_ago() { date -v-"$1"d +%F 2>/dev/null || date -d "-$1 days" +%F; }
+abspath() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$PWD" "$1" ;; esac; }
+
+# share_put <local file> <remote rel path>
+share_put() {
+  local b; b="$(share_base)"
+  case "$(share_mode)" in
+    rclone) rclone copyto "${RCLONE_FLAGS[@]}" "$1" "$b/$2" ;;
+    ssh)    ssh "${b%%:*}" "mkdir -p $(fq "$(dirname "${b#*:}/$2")") && cat > $(fq "${b#*:}/$2")" <"$1" ;;
+    local)  mkdir -p "$(dirname "$b/$2")" && cp "$1" "$b/$2" ;;
+  esac
+}
+# share_cat <rel> – prints the file, nothing if it doesn't exist
+share_cat() {
+  local b; b="$(share_base)"
+  case "$(share_mode)" in
+    rclone) rclone cat "$b/$1" 2>/dev/null ;;
+    ssh)    ssh "${b%%:*}" "cat $(fq "${b#*:}/$1") 2>/dev/null" </dev/null ;;
+    local)  cat "$b/$1" 2>/dev/null ;;
+  esac
+  return 0
+}
+share_rm() {
+  local b; b="$(share_base)"
+  case "$(share_mode)" in
+    rclone) rclone deletefile "${RCLONE_FLAGS[@]}" "$b/$1" ;;
+    ssh)    ssh "${b%%:*}" "rm -f $(fq "${b#*:}/$1")" </dev/null ;;
+    local)  rm -f "$b/$1" ;;
+  esac
+}
+share_purge() {   # remove a whole person folder
+  [ -n "$1" ] || return 1
+  local b; b="$(share_base)"
+  case "$(share_mode)" in
+    rclone) rclone lsf "$b/$1" >/dev/null 2>&1 || return 0   # already gone
+            rclone purge "${RCLONE_FLAGS[@]}" "$b/$1" ;;
+    ssh)    ssh "${b%%:*}" "rm -rf $(fq "${b#*:}/$1")" </dev/null ;;
+    local)  rm -rf "${b:?}/$1" ;;
+  esac
+}
+share_pull() {    # mirror the team folder into $1 (deletions propagate)
+  local b; b="$(share_base)"; mkdir -p "$1"
+  case "$(share_mode)" in
+    rclone) rclone sync "$b" "$1" ;;
+    *)      rsync -a --delete "$b/" "$1/" ;;
+  esac
+}
+
+# share_prepare <in.jpg> <out.jpg> – fresh JPEG without metadata; the repo/sha
+# band at the top is blurred unless lolcommits.share.repo is true
+share_prepare() {
+  local vf="null"
+  [ "$(cfg share.repo false)" = true ] || vf="split[a][b];[b]crop=iw:110:0:0,boxblur=20:2[t];[a][t]overlay=0:0"
+  ffmpeg -hide_banner -loglevel error -y -i "$1" -vf "$vf" -map_metadata -1 -fflags +bitexact -flags:v +bitexact -q:v 3 "$2"
+}
+
+# share_upload <prepared.jpg> <local file> <repo> <subject>
+share_upload() {
+  local img="$1" f="$2" repo="$3" subject="$4" me name d rel tmp
+  name="$(cfg share.name)"; me="$(share_me)" || return 1
+  d="$(basename "$f")"; d="${d:0:8}"
+  rel="$me/$d-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n').jpg"
+  [ "$(cfg share.repo false)" = true ] || repo="-"
+  tmp="$(mktemp)"
+  share_cat "$me/meta.tsv" >"$tmp"
+  printf '%s\t%s\t%s\t%s\t%s\n' "${d:0:4}-${d:4:2}-${d:6:2}" "$(printf '%s' "$name" | tr '\t' ' ')" \
+    "$repo" "$subject" "$(basename "$rel")" >>"$tmp"
+  share_put "$img" "$rel" && share_put "$tmp" "$me/meta.tsv" && printf '%s\t%s\n' "$f" "$rel" >>"$SHARED"
+  local rc=$?; rm -f "$tmp"
+  [ $rc = 0 ] && share_prune
+  return $rc
+}
+
+# drop own shared pictures older than lolcommits.share.retention days (default 0 = keep)
+share_prune() {
+  local days me cutoff tmp; days="$(cfg share.retention 0)"
+  [ "$days" -gt 0 ] 2>/dev/null || return 0
+  me="$(share_me)"; cutoff="$(days_ago "$days")"; tmp="$(mktemp)"
+  share_cat "$me/meta.tsv" >"$tmp"
+  if awk -F'\t' -v c="$cutoff" '$1<c{f=1}END{exit !f}' "$tmp"; then
+    awk -F'\t' -v c="$cutoff" '$1<c{print $5}' "$tmp" | while IFS= read -r x; do
+      share_rm "$me/$x"
+      [ -f "$SHARED" ] && grep -vF "	$me/$x" "$SHARED" >"$SHARED.tmp"; mv -f "$SHARED.tmp" "$SHARED" 2>/dev/null
+    done
+    awk -F'\t' -v c="$cutoff" '$1>=c' "$tmp" >"$tmp.new" && share_put "$tmp.new" "$me/meta.tsv"
+    rm -f "$tmp.new"
+  fi
+  rm -f "$tmp"
+}
+
+cmd_share() {
+  local f="" yes="" a
+  for a in "$@"; do case "$a" in -y|--yes) yes=1 ;; last) ;; *) f="$a" ;; esac; done
+  require_share; need ffmpeg; share_me >/dev/null; require_index
+  [ -n "$f" ] && f="$(abspath "$f")" || f="$(tail -1 "$INDEX" | cut -f6)"
+  local row; row="$(awk -F'\t' -v f="$f" '$6==f' "$INDEX" | tail -1)"
+  [ -n "$row" ] || die "not a lolcommit: $f"
+  [ -f "$SHARED" ] && cut -f1 "$SHARED" | grep -qxF "$f" && die "already shared: $f"
+  local tmp; tmp="$(mktemp -d)"
+  share_prepare "$f" "$tmp/share.jpg" || { rm -rf "$tmp"; die "could not prepare $f"; }
+  if [ -z "$yes" ]; then
+    # show exactly what gets uploaded – check for people in the background
+    info "$tmp/share.jpg"; open_file "$tmp/share.jpg"
+    printf 'Share this picture to %s as "%s"? [y/N] ' "$(cfg share.target)" "$(cfg share.name)"
+    local ans=""; read -r ans </dev/tty || true
+    case "$ans" in y|Y|yes|j|J|ja) ;; *) rm -rf "$tmp"; info "not shared."; return 0 ;; esac
+  fi
+  share_upload "$tmp/share.jpg" "$f" "$(cut -f2 <<<"$row")" "$(cut -f5 <<<"$row")"
+  local rc=$?; rm -rf "$tmp"
+  [ $rc = 0 ] && info "shared ✓" || die "upload failed"
+}
+
+cmd_unshare() {
+  require_share
+  local me; me="$(share_me)"
+  if [ "${1:-}" = --all ]; then
+    share_purge "$me" || die "could not remove $me from $(cfg share.target)"
+    rm -f "$SHARED"; info "removed all your shared pictures from $(cfg share.target) ✓"; return
+  fi
+  [ -s "$SHARED" ] || die "nothing shared from this machine (use --all to clear your folder anyway)"
+  local f="${1:-last}" rel
+  if [ "$f" = last ]; then f="$(tail -1 "$SHARED" | cut -f1)"; else f="$(abspath "$f")"; fi
+  rel="$(awk -F'\t' -v f="$f" '$1==f{print $2}' "$SHARED" | tail -1)"
+  [ -n "$rel" ] || die "not shared: $f"
+  share_rm "$rel" || die "could not delete $rel"
+  local tmp; tmp="$(mktemp)"
+  share_cat "$me/meta.tsv" | awk -F'\t' -v x="$(basename "$rel")" '$5!=x' >"$tmp"
+  share_put "$tmp" "$me/meta.tsv"; rm -f "$tmp"
+  awk -F'\t' -v f="$f" '$1!=f' "$SHARED" >"$SHARED.tmp" && mv -f "$SHARED.tmp" "$SHARED"
+  info "unshared ✓ $f"
+}
+
+# delete pictures locally (and their shared copies)
+cmd_forget() {
+  case "${1:-}" in
+    --all)
+      if [ "${2:-}" != --yes ]; then
+        printf 'Delete ALL lolcommits in %s%s? [y/N] ' "$LOLDIR" \
+          "$( [ "$(share_mode)" != off ] && [ -n "$(cfg share.name)" ] && printf ' and your folder in %s' "$(cfg share.target)")"
+        local ans=""; read -r ans </dev/tty || true
+        case "$ans" in y|Y|yes|j|J|ja) ;; *) info "nothing deleted."; return 0 ;; esac
+      fi
+      if [ "$(share_mode)" != off ] && [ -n "$(cfg share.name)" ]; then ( cmd_unshare --all ) || true; fi
+      [ -f "$INDEX" ] && cut -f6 "$INDEX" | while IFS= read -r f; do rm -f "$f"; done
+      rm -f "$INDEX" "$SHARED" "$LOG" "$LOLDIR"/gallery*.html "$LOLDIR"/timelapse*.mp4 "$LOLDIR"/wrapped-*.jpg "$LOLDIR/test.jpg"
+      rm -rf "$CACHE"
+      find "$LOLDIR" -mindepth 1 -type d -empty -delete 2>/dev/null
+      info "all lolcommits deleted ✓" ;;
+    "") die "usage: lolcommits forget <file|last|--all [--yes]>" ;;
+    *)
+      require_index
+      local f="$1"
+      if [ "$f" = last ]; then f="$(tail -1 "$INDEX" | cut -f6)"; else f="$(abspath "$f")"; fi
+      [ -f "$SHARED" ] && cut -f1 "$SHARED" | grep -qxF "$f" && cmd_unshare "$f"
+      rm -f "$f"
+      awk -F'\t' -v f="$f" '$6!=f' "$INDEX" >"$INDEX.tmp" && mv -f "$INDEX.tmp" "$INDEX"
+      info "deleted ✓ $f" ;;
+  esac
+}
+
+# where the team pictures can be read: the folder itself for local targets
+# (Google Drive for desktop, NAS), a downloaded copy otherwise
+team_dir() { if [ "$(share_mode)" = local ]; then share_base; else printf '%s' "$CACHE"; fi; }
+
+cmd_sync() {
+  require_share
+  if [ "$(share_mode)" = local ]; then info "$(share_base) is a local folder – nothing to sync"; return 0; fi
+  if [ "$(share_mode)" = rclone ]; then need rclone; else need rsync; fi
+  info "syncing $(cfg share.target)…"
+  share_pull "$CACHE" || die "could not sync $(cfg share.target)"
+}
+
+gallery_shared() {
+  cmd_sync
+  local cutoff="0000" days; days="$(cfg share.retention 0)"
+  [ "$days" -gt 0 ] 2>/dev/null && cutoff="$(days_ago "$days")"
+  local out="$LOLDIR/gallery-shared.html" m tdir; tdir="$(team_dir)"
+  for m in "$tdir"/*/meta.tsv; do
+    [ -f "$m" ] || continue
+    awk -F'\t' -v d="$(dirname "$m")" -v c="$cutoff" 'BEGIN{OFS="\t"} $1>=c {print $1,$2,($3==""?"-":$3),"-",$4,d"/"$5}' "$m"
+  done | sort -r | gallery_html "lolcommits · team" "everyone" >"$out"
+  info "$out"; open_file "$out"
+}
+
+# local retention: lolcommits.retention days (unset = keep forever)
+prune_local() {
+  local days cutoff; days="$(cfg retention)"
+  [ "$days" -gt 0 ] 2>/dev/null && [ -f "$INDEX" ] || return 0
+  cutoff="$(days_ago "$days")"
+  awk -F'\t' -v c="$cutoff" 'substr($1,1,10)<c{print $6}' "$INDEX" | while IFS= read -r f; do rm -f "$f"; done
+  awk -F'\t' -v c="$cutoff" 'substr($1,1,10)>=c' "$INDEX" >"$INDEX.tmp" && mv -f "$INDEX.tmp" "$INDEX"
 }
 
 # concat list from index lines on stdin
@@ -377,10 +662,43 @@ cmd_wrapped() {
   info "$year wrapped: $count commits → $out"; open_file "$out"
 }
 
+# ---------------------------------------------------------------- app
+# real location of this script (follows the ~/.local/bin symlink)
+script_home() {
+  local p="$0" l
+  while [ -L "$p" ]; do l="$(readlink "$p")"; case "$l" in /*) p="$l" ;; *) p="$(dirname "$p")/$l" ;; esac; done
+  cd "$(dirname "$p")" && pwd
+}
+# path of lolcommits.app (macOS) or the lolcommits-app binary (Linux), empty if none
+app_bundle() {
+  [ "${LOLCOMMITS_NO_APP:-}" = 1 ] && return 0
+  [ -n "${LOLCOMMITS_APP:-}" ] && { printf '%s' "$LOLCOMMITS_APP"; return; }
+  local home; home="$(script_home)"
+  case "$home" in *.app/Contents/Resources) printf '%s' "${home%/Contents/Resources}"; return ;; esac
+  local a
+  for a in /Applications/lolcommits.app "$HOME/Applications/lolcommits.app"; do
+    [ "$OS" = Darwin ] && [ -d "$a" ] && { printf '%s' "$a"; return; }
+  done
+  [ "$OS" = Linux ] && command -v lolcommits-app 2>/dev/null
+  return 0
+}
+app_running() { pgrep -x lolcommits-app >/dev/null 2>&1; }
+launch_app() {
+  case "$1" in
+    *.app) open -g -a "$1" --args --background ;;
+    *) nohup "$1" --background </dev/null >/dev/null 2>&1 & ;;
+  esac
+}
+cmd_ui() {
+  local app; app="$(app_bundle)"
+  [ -n "$app" ] || die "lolcommits.app is not installed – get it from https://github.com/simon-scherzinger/sis.lolcommits/releases"
+  case "$app" in *.app) open -a "$app" ;; *) nohup "$app" </dev/null >/dev/null 2>&1 & ;; esac
+}
+
 # ---------------------------------------------------------------- main
 cmd="${1:-help}"; [ $# -gt 0 ] && shift
 case "$cmd" in
-  enable|disable|status|capture|test|last|gallery|timelapse|wrapped|devices|doctor) "cmd_$cmd" "$@" ;;
+  enable|disable|status|capture|test|last|gallery|timelapse|wrapped|devices|doctor|share|unshare|forget|sync|ui) "cmd_$cmd" "$@" ;;
   -v|--version|version) info "lolcommits $VERSION" ;;
   help|-h|--help) usage ;;
   *) usage >&2; exit 1 ;;

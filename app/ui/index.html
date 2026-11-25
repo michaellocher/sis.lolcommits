@@ -1,0 +1,908 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>lolcommits</title>
+<style>
+@font-face{font-family:Anton;src:local("Anton"),local("Impact")}
+:root{
+  --bg:#f5f4f0;--fg:#17171a;--mut:#6c6c72;--line:#0000001a;--card:#fff;--card2:#efeee9;
+  --acc:#ffd60a;--acc-fg:#17171a;--ok:#1f9d55;--bad:#d93025;--shadow:0 1px 2px #0000000f,0 4px 16px #0000000d;
+  --r:14px;color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#141416;--fg:#f1f1f3;--mut:#9b9ba3;--line:#ffffff1a;--card:#1e1e21;--card2:#29292d;
+  --shadow:0 1px 2px #0006,0 6px 20px #0005;color-scheme:dark;
+}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;-webkit-user-select:none;user-select:none}
+input,textarea{-webkit-user-select:text;user-select:text}
+button,input,select{font:inherit;color:inherit}
+a{color:inherit}
+.impact{font-family:Impact,"Anton","Arial Narrow Bold",sans-serif;font-weight:400;letter-spacing:.3px}
+.top{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:10px 18px;flex-wrap:wrap}
+.brand{font-size:26px;line-height:1}
+.brand small{font:500 11px system-ui;color:var(--mut);margin-left:6px;letter-spacing:0}
+nav{display:flex;gap:3px;background:var(--card2);padding:3px;border-radius:10px}
+nav a{padding:5px 13px;border-radius:8px;text-decoration:none;color:var(--mut);font-weight:600;font-size:13px;cursor:default}
+nav a.on{background:var(--card);color:var(--fg);box-shadow:var(--shadow)}
+.spacer{flex:1}
+.pill{font-size:12px;font-weight:600;padding:4px 10px;border-radius:99px;background:var(--card2);color:var(--mut);white-space:nowrap}
+.pill.on{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.pill.on::before{content:"● "}
+.btn{border:1px solid var(--line);background:var(--card);padding:7px 14px;border-radius:9px;cursor:default;font-weight:600;font-size:13px;white-space:nowrap;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--mut)}
+.btn.primary{background:var(--acc);color:var(--acc-fg);border-color:transparent}
+.btn.big{padding:10px 20px;font-size:15px;border-radius:11px}
+.btn.danger{color:var(--bad)}
+.btn.danger.solid{background:var(--bad);color:#fff;border-color:transparent}
+.btn.link{border:0;background:none;color:var(--mut);padding:7px 4px;text-decoration:underline}
+.btn:disabled{opacity:.45}
+.btn.busy{position:relative;color:transparent!important}
+.btn.busy::after{content:"";position:absolute;inset:0;margin:auto;width:15px;height:15px;border-radius:50%;border:2px solid var(--mut);border-top-color:transparent;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(1turn)}}
+main{max-width:1440px;margin:auto;padding:18px}
+section[hidden],[hidden]{display:none!important}
+.banner{display:flex;gap:12px;align-items:center;background:color-mix(in srgb,var(--acc) 22%,var(--card));border-radius:12px;padding:10px 14px;margin-bottom:14px;font-weight:500}
+.banner.bad{background:color-mix(in srgb,var(--bad) 14%,var(--card))}
+.banner .spacer{flex:1}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.bar input[type=search],select,.field input:not([type=checkbox]):not([type=range]){background:var(--card);border:1px solid var(--line);border-radius:9px;padding:7px 11px}
+.bar input[type=search]{min-width:220px}
+.count{color:var(--mut);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px}
+.shot{margin:0;background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);position:relative;transition:transform .15s}
+.shot:hover{transform:translateY(-2px)}
+.shot img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:var(--card2)}
+.shot figcaption{padding:9px 13px 11px}
+.shot .msg{font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.shot .meta{color:var(--mut);font-size:12px;margin-top:2px;display:flex;justify-content:space-between;gap:8px}
+.badge{position:absolute;top:9px;left:9px;background:var(--acc);color:var(--acc-fg);font-size:10px;font-weight:800;padding:3px 8px;border-radius:99px;letter-spacing:.3px;text-transform:uppercase}
+.empty{text-align:center;padding:70px 20px;color:var(--mut)}
+.empty h2{color:var(--fg);font-size:38px;margin:0 0 8px}
+.empty .btns{display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:16px;align-items:start}
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:18px 20px}
+.card h3{margin:0 0 3px;font-size:16px}
+.card p.sub{margin:0 0 12px;color:var(--mut);font-size:13px}
+.field{display:grid;grid-template-columns:1fr auto;gap:3px 16px;align-items:center;padding:11px 0;border-top:1px solid var(--line)}
+.field:first-of-type{border-top:0}
+.field label{font-weight:600}
+.field .hint{grid-column:1/-1;color:var(--mut);font-size:12px}
+.field input:not([type=checkbox]):not([type=range]),.field select{width:210px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.switch{appearance:none;-webkit-appearance:none;width:40px;height:24px;border-radius:99px;background:var(--card2);border:1px solid var(--line);position:relative;margin:0;transition:background .15s}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0004;transition:transform .15s}
+.switch:checked{background:var(--ok);border-color:transparent}
+.switch:checked::after{transform:translateX(16px)}
+.switch:disabled{opacity:.4}
+code{font:12px ui-monospace,Menlo,monospace;word-break:break-all;-webkit-user-select:text;user-select:text}
+ul.facts{margin:0;padding-left:18px}ul.facts li{margin:4px 0}
+dialog{border:0;padding:0;background:transparent;color:var(--fg);max-width:min(1200px,96vw);max-height:96vh}
+dialog::backdrop{background:#000000d0}
+.viewer{display:flex;flex-direction:column;gap:12px}
+.viewer img,.viewer video{max-width:100%;max-height:72vh;border-radius:12px;display:block;margin:auto;background:#000}
+.panel{background:var(--card);border-radius:var(--r);padding:14px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.panel .txt{flex:1;min-width:240px}
+.panel .msg{font-weight:700;font-size:16px}
+.panel .meta{color:var(--mut);font-size:12px}
+.nav-btn{position:fixed;top:50%;transform:translateY(-50%);background:#ffffff22;color:#fff;border:0;width:44px;height:44px;border-radius:50%;font-size:22px}
+.nav-btn:hover{background:#ffffff44}.nav-btn.l{left:14px}.nav-btn.r{right:14px}
+.modal{background:var(--card);border-radius:var(--r);padding:22px;width:min(700px,94vw)}
+.modal h3{margin:0 0 6px}.modal p{color:var(--mut);margin:0 0 14px}
+.modal img{width:100%;border-radius:10px;display:block;margin-bottom:14px;min-height:120px;background:var(--card2)}
+.checks label{display:flex;gap:10px;align-items:center;padding:5px 0;font-weight:500}
+.modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.doc{width:min(860px,94vw);max-height:86vh;overflow:auto;-webkit-user-select:text;user-select:text}
+.doc h1{font-size:22px;margin:0 0 10px}.doc h2{font-size:17px;margin:22px 0 8px}
+.doc p,.doc li{color:var(--fg);line-height:1.5}.doc ul{padding-left:20px}
+.doc table{border-collapse:collapse;width:100%;font-size:13px;margin:8px 0}
+.doc td,.doc th{border-top:1px solid var(--line);padding:7px 8px;vertical-align:top;text-align:left}
+.doc th{color:var(--mut);font-weight:600}
+.doc blockquote{margin:8px 0;padding:10px 14px;border-left:3px solid var(--acc);background:var(--card2);border-radius:0 10px 10px 0}
+.doc blockquote p{margin:4px 0}
+.modal input[type=text]{width:100%;padding:8px 12px;border-radius:9px;border:1px solid var(--line);background:var(--card2)}
+#toasts{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:60;align-items:center}
+.toast{background:var(--fg);color:var(--bg);padding:9px 15px;border-radius:11px;font-weight:600;font-size:13px;box-shadow:var(--shadow);max-width:90vw;animation:up .2s}
+.toast.err{background:var(--bad);color:#fff}
+@keyframes up{from{transform:translateY(8px);opacity:0}}
+
+/* ---------------------------------------------------------------- wizard */
+#wizard{position:fixed;inset:0;z-index:40;background:var(--bg);display:flex;flex-direction:column;overflow:auto}
+.wz-top{display:flex;align-items:center;gap:14px;padding:16px 24px}
+.dots{display:flex;gap:6px}.dots i{width:8px;height:8px;border-radius:50%;background:var(--line)}.dots i.on{background:var(--fg)}
+.wz{flex:1;display:flex;align-items:center;justify-content:center;padding:10px 24px 40px}
+.step{width:min(760px,100%)}
+.step h1{font-size:46px;margin:0 0 6px;line-height:1.05}
+.step .lead{font-size:16px;color:var(--mut);margin:0 0 22px;max-width:620px}
+.step .nav{display:flex;gap:10px;align-items:center;margin-top:26px}
+.hero{width:120px;height:120px;border-radius:28px;background:var(--acc);display:grid;place-items:center;margin-bottom:18px;box-shadow:var(--shadow)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.col{background:var(--card);border-radius:var(--r);padding:16px 18px;box-shadow:var(--shadow)}
+.col h4{margin:0 0 8px;font-size:15px}
+.col ul{margin:0;padding-left:18px;color:var(--mut)}.col li{margin:4px 0}
+.note{margin-top:14px;background:color-mix(in srgb,var(--acc) 20%,var(--card));border-radius:var(--r);padding:14px 16px}
+.note b{display:block;margin-bottom:3px}
+.cam{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;align-items:start}
+.cam .shotbox{aspect-ratio:16/9;background:var(--card2);border-radius:var(--r);display:grid;place-items:center;overflow:hidden;color:var(--mut)}
+.cam .shotbox img{width:100%;height:100%;object-fit:cover}
+.choice{display:grid;gap:10px}
+.opt{display:flex;gap:14px;align-items:center;background:var(--card);border:2px solid transparent;border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow);text-align:left;width:100%}
+.opt:hover{border-color:var(--line)}
+.opt.sel{border-color:var(--fg)}
+.opt .ic{width:38px;height:38px;border-radius:10px;background:var(--card2);display:grid;place-items:center;font-size:20px;flex:none}
+.opt .t{font-weight:700}.opt .d{color:var(--mut);font-size:12px}
+.opt .go{margin-left:auto;color:var(--mut)}
+.ok{color:var(--ok);font-weight:700}
+.sub-h{font-size:12px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin:18px 0 8px}
+@media (max-width:760px){.cols,.cam{grid-template-columns:1fr}.cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand impact">lolcommits<small id="ver"></small></div>
+  <nav>
+    <a data-v="shots">My shots</a>
+    <a data-v="team">Team</a>
+    <a data-v="settings">Settings</a>
+    <a data-v="privacy">Privacy</a>
+  </nav>
+  <div class="spacer"></div>
+  <span id="hookPill" class="pill"></span>
+  <button class="btn primary" id="testBtn">📸 Test photo</button>
+</header>
+
+<main>
+  <div class="banner" id="pauseBanner" hidden><span id="pauseText"></span><div class="spacer"></div><button class="btn" data-act="resume">Resume</button></div>
+  <div class="banner" id="offBanner" hidden><span>lolcommits is off – no photos are taken.</span><div class="spacer"></div><button class="btn primary" data-act="enable">Turn on</button></div>
+  <div class="banner bad" id="errBanner" hidden><span id="errText"></span></div>
+
+  <section id="v-shots">
+    <div class="bar">
+      <select id="repoSel" aria-label="Repository"></select>
+      <input id="q" type="search" placeholder="Search commit messages…" aria-label="Search">
+      <span class="count" id="count"></span>
+      <div class="spacer"></div>
+      <button class="btn" id="timelapseBtn">🎞 Timelapse</button>
+      <select id="yearSel" aria-label="Year"></select>
+      <button class="btn" id="wrappedBtn">🗓 Wrapped</button>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="shotsEmpty" hidden>
+      <h2 class="impact">no lolcommits yet</h2>
+      <div>Commit something. The menu bar icon flashes and the picture shows up here.</div>
+    </div>
+  </section>
+
+  <section id="v-team" hidden>
+    <div id="teamSetup" class="empty" hidden>
+      <h2 class="impact">team gallery</h2>
+      <div>Share your best shots with your team – voluntary, with a preview, and you can take them back any time.</div>
+      <div class="btns"><button class="btn primary big" data-act="setup-team">Set up team gallery</button></div>
+    </div>
+    <div id="teamMain" hidden>
+      <div class="bar">
+        <select id="personSel" aria-label="Person"></select>
+        <input id="tq" type="search" placeholder="Search…" aria-label="Search">
+        <span class="count" id="tcount"></span>
+        <div class="spacer"></div>
+        <span class="count" id="tlabel"></span>
+        <button class="btn" id="syncBtn">⟳ Refresh</button>
+      </div>
+      <div class="grid" id="tgrid"></div>
+      <div class="empty" id="teamEmpty" hidden><h2 class="impact">nothing here yet</h2><div>Share a shot from “My shots”.</div></div>
+    </div>
+  </section>
+
+  <section id="v-settings" hidden>
+    <div class="cards">
+      <div class="card">
+        <h3>Capture</h3><p class="sub">When and how the photo is taken.</p>
+        <div class="field"><label for="s-hook">Photo on every commit</label><input type="checkbox" class="switch" id="s-hook">
+          <div class="hint" id="hookHint">In every repo on this computer.</div></div>
+        <div class="field"><label>Pause</label>
+          <div class="row" id="pauseBtns">
+            <button class="btn" data-pause="60">1 hour</button><button class="btn" data-pause="-1">Until tomorrow</button><button class="btn" data-pause="0">Until I resume</button>
+          </div>
+          <div class="row" id="resumeRow" hidden><span id="pausedLbl"></span><button class="btn" data-act="resume">Resume</button></div>
+        </div>
+        <div class="field"><label for="s-device">Camera</label><select id="s-device"><option value="">Default</option></select></div>
+        <div class="field"><label for="s-delay">Warm-up <span class="count" id="delayVal"></span></label><input id="s-delay" type="range" min="0" max="4" step="0.5">
+          <div class="hint">Seconds before the shot, so the camera can adjust to the light.</div></div>
+      </div>
+
+      <div class="card">
+        <h3>Team gallery</h3><p class="sub" id="teamSub">Not set up. Pictures stay on this computer.</p>
+        <div id="teamOff"><button class="btn primary" data-act="setup-team">Set up team gallery</button></div>
+        <div id="teamOn" hidden>
+          <div class="field"><label>Shared to</label><div class="row"><button class="btn" data-act="setup-team">Change…</button><button class="btn danger" id="disconnectBtn">Disconnect</button></div>
+            <div class="hint" id="teamTarget"></div></div>
+          <div class="field"><label for="s-name">Your name</label><input id="s-name" data-key="share.name" placeholder="a nickname is fine"></div>
+          <div class="field"><label for="s-repo">Show repo names</label><input type="checkbox" class="switch" id="s-repo" data-key="share.repo">
+            <div class="hint">Off: repo and commit hash are blurred in shared pictures. Keep it off for client work.</div></div>
+          <div class="field"><label for="s-auto">Share every photo automatically</label><input type="checkbox" class="switch" id="s-auto" data-key="share.auto">
+            <div class="hint">Skips the preview – nobody checks the background or the commit message.</div></div>
+          <div class="field"><label for="s-sret">Remove my shared pictures after</label><input id="s-sret" data-key="share.retention" type="number" min="0" placeholder="never (days)">
+            <div class="hint">Days. Empty keeps them until you take them back. Your team may have agreed on a period.</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>On this computer</h3><p class="sub">Pictures never leave this computer unless you share them.</p>
+        <div class="field"><label>Folder</label><code id="s-dir"></code></div>
+        <div class="field"><label for="s-ret">Delete local pictures after</label><input id="s-ret" data-key="retention" type="number" min="0" placeholder="never (days)"></div>
+      </div>
+
+      <div class="card">
+        <h3>App</h3><p class="sub">lolcommits lives in the menu bar. Closing this window keeps it running.</p>
+        <div class="field"><label for="s-login">Start at login</label><input type="checkbox" class="switch" id="s-login"></div>
+        <div class="field"><label>Command line tool</label><button class="btn" id="cliBtn">Install `lolcommits` command</button>
+          <div class="hint">Optional. Adds ~/.local/bin/lolcommits for gallery, timelapse and more in the terminal.</div></div>
+        <div class="field"><label>Setup</label><button class="btn" data-act="wizard">Run setup again</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="v-privacy" hidden>
+    <div class="cards">
+      <div class="card">
+        <h3>What stays here</h3><p class="sub">Everything, by default.</p>
+        <ul class="facts">
+          <li>Pictures and the commit list live in <code id="p-dir"></code>.</li>
+          <li>Nothing is uploaded until you share a picture and confirm the preview.</li>
+          <li>No face recognition, no mood detection, no tracking.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>What a shared picture contains</h3><p class="sub" id="p-target">Sharing is off.</p>
+        <ul class="facts">
+          <li>The picture, without metadata, <span id="p-repo"></span>.</li>
+          <li>The date (no time), your name and the commit message.</li>
+          <li id="p-keep"></li>
+          <li>Your team sees no statistics per person.</li>
+        </ul>
+        <p class="sub" style="margin-top:12px" id="p-count"></p>
+        <button class="btn link" data-act="privacy-doc">Privacy guide for teams (GDPR)</button>
+      </div>
+      <div class="card">
+        <h3>Take it back</h3><p class="sub">These really delete.</p>
+        <div class="field"><label>Remove all my shared pictures</label><button class="btn danger" id="unshareAllBtn">Unshare all</button>
+          <div class="hint">Deletes your folder in the team gallery. Pictures stay on this computer.</div></div>
+        <div class="field"><label>Delete everything</label><button class="btn danger solid" id="forgetAllBtn">Delete all</button>
+          <div class="hint">All pictures on this computer – and, if you tick it, your shared ones.</div></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ---------------------------------------------------------------- wizard -->
+<div id="wizard" hidden>
+  <div class="wz-top"><div class="brand impact">lolcommits</div><div class="spacer"></div><div class="dots" id="dots"></div></div>
+  <div class="wz">
+
+    <div class="step" data-step="welcome">
+      <div class="hero"><svg width="72" height="72" viewBox="0 0 44 44" fill="#17171a"><path d="M9 13h26a5 5 0 0 1 5 5v14a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V18a5 5 0 0 1 5-5zm8-4h8a2 2 0 0 1 2 2v2H15v-2a2 2 0 0 1 2-2z"/><circle cx="22" cy="25" r="9" fill="#ffd60a"/><circle cx="22" cy="25" r="6"/></svg></div>
+      <h1 class="impact">a selfie for every commit</h1>
+      <p class="lead">lolcommits takes a photo when you commit and puts the commit message on it in big meme letters. In a year you have a timelapse of your face while shipping things.</p>
+      <div class="nav"><button class="btn primary big" data-next>Get started</button></div>
+    </div>
+
+    <div class="step" data-step="fair">
+      <h1 class="impact">fun, and fair</h1>
+      <p class="lead">Photos of people are personal data. lolcommits keeps team spirit and the GDPR on the same side:</p>
+      <div class="cols">
+        <div class="col"><h4>🔒 Stays with you</h4><ul>
+          <li>Every photo stays on this computer.</li><li>No upload, no cloud, no tracking.</li><li>Delete anything, any time.</li></ul></div>
+        <div class="col"><h4>🤝 If you share with your team</h4><ul>
+          <li>Voluntary – you pick every picture after a preview.</li><li>Date only, no times, no statistics per person.</li><li>Take it back with one click.</li></ul></div>
+      </div>
+      <div class="note"><b>Using it at work?</b>Pictures of colleagues are employee data. Before a team gallery starts, check with your data protection officer (and works council, if you have one) and agree how long team pictures are kept. <button class="btn link" data-act="privacy-doc">Read the privacy guide</button></div>
+      <div class="nav"><button class="btn link" data-back>Back</button><button class="btn primary big" data-next>Got it</button></div>
+    </div>
+
+    <div class="step" data-step="camera">
+      <h1 class="impact">say cheese</h1>
+      <p class="lead">lolcommits needs your camera. macOS asks once – for this app only, not for every terminal and editor.</p>
+      <div class="cam">
+        <div class="shotbox" id="wzShot">No test photo yet</div>
+        <div>
+          <div id="camAsk"><button class="btn primary big" id="camAllowBtn">Allow camera</button></div>
+          <div id="camOk" hidden>
+            <p class="ok">✓ Camera allowed</p>
+            <div class="sub-h">Camera</div><select id="wzDevice" style="width:100%"><option value="">Default</option></select>
+            <div class="sub-h">Warm-up <span class="count" id="wzDelayVal"></span></div><input id="wzDelay" type="range" min="0" max="4" step="0.5" style="width:100%">
+            <div style="margin-top:14px"><button class="btn primary" id="wzTestBtn">📸 Take a test photo</button></div>
+          </div>
+          <p class="count" id="camDenied" hidden>No access. Open System Settings › Privacy &amp; Security › Camera and switch on lolcommits, then try again.</p>
+        </div>
+      </div>
+      <div class="nav"><button class="btn link" data-back>Back</button><button class="btn primary big" data-next id="camNext" disabled>Next</button><button class="btn link" data-next>Skip for now</button></div>
+    </div>
+
+    <div class="step" data-step="enable">
+      <h1 class="impact">every commit, every repo</h1>
+      <p class="lead">lolcommits hooks into git for all your repositories. Committing stays instant – the photo is taken in the background.</p>
+      <div class="choice">
+        <button class="opt" id="wzEnable"><span class="ic">⚡️</span><span><div class="t">Take a photo on every commit</div><div class="d" id="wzEnableD">In every repo on this computer. Pause any time from the menu bar.</div></span><span class="go" id="wzEnableState">Turn on</span></button>
+      </div>
+      <p class="count" style="margin-top:12px">Note: git clients with their own built-in git (some GUI apps) may not trigger it. Terminal, VS Code, JetBrains and Apple git work.</p>
+      <div class="nav"><button class="btn link" data-back>Back</button><button class="btn primary big" data-next>Next</button></div>
+    </div>
+
+    <div class="step" data-step="team">
+      <h1 class="impact">team gallery</h1>
+      <p class="lead">Optional. Share your best shots in a shared Google Drive. You can do this later in Settings.</p>
+      <div id="wzTeamPick">
+        <div id="wzDriveBox" hidden>
+          <div class="sub-h">Google Drive on this Mac</div>
+          <div class="choice" id="wzDrives"></div>
+        </div>
+        <div class="sub-h">Other ways</div>
+        <div class="choice">
+          <button class="opt" id="wzGoogle"><span class="ic">🔑</span><span><div class="t">Sign in with Google</div><div class="d" id="wzGoogleD">Opens your browser. Then pick a shared drive.</div></span><span class="go">›</span></button>
+          <button class="opt" id="wzFolder"><span class="ic">📁</span><span><div class="t">Choose a folder…</div><div class="d">A shared folder or network drive your team can reach.</div></span><span class="go">›</span></button>
+        </div>
+        <div id="wzRclone" hidden style="margin-top:14px" class="note"></div>
+      </div>
+      <div id="wzTeamName" hidden>
+        <p class="ok" id="wzTeamOk"></p>
+        <div class="sub-h">Your name in the gallery</div>
+        <input id="wzName" placeholder="a nickname is fine" style="width:280px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card)">
+        <div class="sub-h">Defaults</div>
+        <ul class="facts" style="color:var(--mut)">
+          <li>You confirm every picture with a preview before it is shared.</li>
+          <li>Repo names and commit hashes are blurred.</li>
+          <li>Shared pictures stay until you take them back. You can set an expiry in Settings.</li>
+        </ul>
+      </div>
+      <div class="nav"><button class="btn link" data-back>Back</button>
+        <button class="btn primary big" id="wzTeamSave" hidden>Save</button>
+        <button class="btn link" data-next id="wzTeamSkip">Skip – keep everything on this computer</button></div>
+    </div>
+
+    <div class="step" data-step="done">
+      <h1 class="impact">you're all set</h1>
+      <p class="lead">lolcommits now lives in your menu bar. When you commit, the camera icon flashes and the photo lands in your gallery. Click the icon to pause, share or open the gallery.</p>
+      <div class="choice">
+        <label class="opt"><span class="ic">🚀</span><span><div class="t">Start at login</div><div class="d">So the menu bar icon is always there. Commits work either way.</div></span><input type="checkbox" class="switch go" id="wzLogin" checked></label>
+      </div>
+      <div class="nav"><button class="btn primary big" id="wzFinish">Open my gallery</button></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ---------------------------------------------------------------- dialogs -->
+<dialog id="viewer">
+  <div class="viewer">
+    <img id="vImg" alt="">
+    <div class="panel">
+      <div class="txt"><div class="msg" id="vMsg"></div><div class="meta" id="vMeta"></div></div>
+      <div id="vActions" class="row"></div>
+      <button class="btn" data-close>Close</button>
+    </div>
+  </div>
+  <button class="nav-btn l" id="vPrev" aria-label="Previous">‹</button>
+  <button class="nav-btn r" id="vNext" aria-label="Next">›</button>
+</dialog>
+
+<dialog id="shareDlg">
+  <div class="modal">
+    <h3>Share this picture?</h3>
+    <p id="shareInfo"></p>
+    <img id="shareImg" alt="Exactly what will be uploaded">
+    <div class="checks">
+      <label><input type="checkbox" class="sc"> Nobody else is in the picture, or they agreed</label>
+      <label><input type="checkbox" class="sc"> The commit message is fine for the team to read</label>
+    </div>
+    <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn primary" id="shareGo" disabled>Share</button></div>
+  </div>
+</dialog>
+
+<dialog id="confirmDlg">
+  <div class="modal">
+    <h3 id="cTitle"></h3><p id="cText"></p>
+    <label class="checks" id="cAlsoWrap" hidden><span style="display:flex;gap:10px;align-items:center"><input type="checkbox" id="cAlso"> <span id="cAlsoLbl"></span></span></label>
+    <div id="cTypeWrap" hidden><p>Type <b>DELETE</b> to confirm.</p><input type="text" id="cType" autocomplete="off"></div>
+    <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn danger solid" id="cGo"></button></div>
+  </div>
+</dialog>
+
+<dialog id="mediaDlg">
+  <div class="viewer">
+    <div id="mBody"></div>
+    <div class="panel"><div class="txt"><div class="msg" id="mTitle"></div><div class="meta" id="mPath"></div></div><button class="btn" data-close>Close</button></div>
+  </div>
+</dialog>
+
+<dialog id="docDlg">
+  <div class="modal doc">
+    <div id="docBody"></div>
+    <div class="actions"><button class="btn link" id="docWeb">Open on GitHub</button><button class="btn primary" data-close>Close</button></div>
+  </div>
+</dialog>
+
+<div id="toasts" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+const TAURI = window.__TAURI__;
+const invoke = TAURI.core.invoke, fileSrc = TAURI.core.convertFileSrc;
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const PRIVACY_URL = "https://github.com/simon-scherzinger/sis.lolcommits/blob/main/PRIVACY.md";
+let S = null, TEAM = [], TVIEW = [], view = "shots", list = [], vi = 0, viewerKind = "shots";
+
+const api = (cmd, args) => invoke(cmd, args || {});
+const src = (f, bust) => fileSrc(f) + (bust ? "?v=" + Date.now() : "");
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k === "class") e.className = v;
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k.nodeType ? k : String(k));
+  return e;
+}
+function toast(msg, err) {
+  const t = h("div", {class: "toast" + (err ? " err" : "")}, String(msg));
+  $("#toasts").append(t);
+  setTimeout(() => t.remove(), err ? 7000 : 3000);
+}
+async function busy(btn, fn) {
+  if (btn) { btn.disabled = true; btn.classList.add("busy"); }
+  try { return await fn(); }
+  catch (e) { toast(e, true); }
+  finally { if (btn) { btn.disabled = false; btn.classList.remove("busy"); } }
+}
+const fmtTs = ts => { const d = new Date(ts); return isNaN(d) ? ts : d.toLocaleString(undefined, {dateStyle: "medium", timeStyle: "short"}); };
+const fmtDate = d => { const x = new Date(d + "T12:00:00"); return isNaN(x) ? d : x.toLocaleDateString(undefined, {dateStyle: "medium"}); };
+const cfg = (k, d = "") => (S && S.config[k.toLowerCase()]) ?? d;
+const pausedText = () => !S.pausedUntil ? "" : S.pausedUntil > 4e12 ? "Paused until you resume"
+  : "Paused until " + new Date(S.pausedUntil * 1000).toLocaleString(undefined, {weekday: "short", hour: "2-digit", minute: "2-digit"});
+
+// ------------------------------------------------------------------ state
+async function load() {
+  S = await api("get_state");
+  renderHeader(); renderShots(); renderSettings(); renderPrivacy(); renderTeamShell();
+}
+function renderHeader() {
+  $("#ver").textContent = S.version;
+  const p = $("#hookPill"), on = S.hookGlobal && !S.pausedUntil;
+  p.className = "pill" + (on ? " on" : "");
+  p.textContent = !S.hookGlobal ? "off" : S.pausedUntil ? "paused" : "on";
+  $("#pauseBanner").hidden = !S.pausedUntil; $("#pauseText").textContent = "⏸ " + pausedText();
+  $("#offBanner").hidden = S.hookGlobal || !S.setupDone;
+  $("#errBanner").hidden = !S.shareError; $("#errText").textContent = S.shareError;
+}
+
+// ------------------------------------------------------------------ my shots
+function filteredShots() {
+  const r = $("#repoSel").value, q = $("#q").value.toLowerCase();
+  return S.shots.filter(s => (!r || s.repo === r) && s.subject.toLowerCase().includes(q));
+}
+function renderShots() {
+  const repos = [...new Set(S.shots.map(s => s.repo))].sort();
+  const cur = $("#repoSel").value;
+  $("#repoSel").replaceChildren(h("option", {value: ""}, "All repos"), ...repos.map(r => h("option", {value: r}, r)));
+  $("#repoSel").value = repos.includes(cur) ? cur : "";
+  const years = [...new Set(S.shots.map(s => s.ts.slice(0, 4)))].sort().reverse();
+  const cy = $("#yearSel").value;
+  $("#yearSel").replaceChildren(...years.map(y => h("option", {value: y}, y)));
+  if (years.includes(cy)) $("#yearSel").value = cy;
+  ["#timelapseBtn", "#wrappedBtn", "#yearSel"].forEach(s => $(s).disabled = !S.shots.length);
+  $("#timelapseBtn").title = S.ffmpeg ? "" : "Needs ffmpeg (brew install ffmpeg)";
+  drawShots();
+}
+function drawShots() {
+  list = filteredShots();
+  $("#shotsEmpty").hidden = S.shots.length > 0;
+  $("#count").textContent = S.shots.length ? list.length + (list.length === 1 ? " shot" : " shots") : "";
+  $("#grid").replaceChildren(...list.map((s, i) => h("figure", {class: "shot", onclick: () => openViewer("shots", i)},
+    s.shared ? h("span", {class: "badge"}, "shared") : null,
+    h("img", {src: src(s.file), loading: "lazy", alt: s.subject}),
+    h("figcaption", {},
+      h("div", {class: "msg"}, s.subject),
+      h("div", {class: "meta"}, h("span", {}, s.repo + " · " + s.branch), h("span", {}, fmtTs(s.ts)))))));
+}
+$("#repoSel").onchange = $("#q").oninput = drawShots;
+
+// ------------------------------------------------------------------ viewer
+function openViewer(kind, i) {
+  viewerKind = kind; vi = i; fillViewer();
+  if (!$("#viewer").open) $("#viewer").showModal();
+}
+function fillViewer() {
+  const L = viewerKind === "shots" ? list : TVIEW;
+  const s = L[vi]; if (!s) return $("#viewer").close();
+  $("#vImg").src = src(s.file); $("#vImg").alt = s.subject;
+  $("#vMsg").textContent = s.subject;
+  const acts = [];
+  if (viewerKind === "shots") {
+    $("#vMeta").textContent = [s.repo, s.branch, s.sha, fmtTs(s.ts)].join(" · ") + (s.shared ? " · shared" : "");
+    if (s.shared) acts.push(h("button", {class: "btn", onclick: e => unshareOne(e.currentTarget, s)}, "Unshare"));
+    else if (S.sharing) acts.push(h("button", {class: "btn primary", onclick: () => shareFlow(s)}, "Share…"));
+    acts.push(h("button", {class: "btn danger", onclick: () => deleteOne(s)}, "Delete"));
+  } else {
+    $("#vMeta").textContent = [s.name, s.repo, fmtDate(s.date)].filter(Boolean).join(" · ");
+  }
+  $("#vActions").replaceChildren(...acts);
+  $("#vPrev").hidden = vi <= 0; $("#vNext").hidden = vi >= L.length - 1;
+}
+$("#vPrev").onclick = () => { vi--; fillViewer(); };
+$("#vNext").onclick = () => { vi++; fillViewer(); };
+document.addEventListener("keydown", e => {
+  if (!$("#viewer").open) return;
+  const L = viewerKind === "shots" ? list : TVIEW;
+  if (e.key === "ArrowLeft" && vi > 0) { vi--; fillViewer(); }
+  if (e.key === "ArrowRight" && vi < L.length - 1) { vi++; fillViewer(); }
+});
+$$("dialog").forEach(d => d.addEventListener("click", e => { if (e.target === d || e.target.closest("[data-close]")) d.close(); }));
+function refreshViewer(file) {
+  if (!$("#viewer").open) return;
+  const i = list.findIndex(x => x.file === file);
+  if (i < 0) { if (vi >= list.length) vi = list.length - 1; } else vi = i;
+  fillViewer();
+}
+
+// ------------------------------------------------------------------ actions
+async function shareFlow(s) {
+  const dlg = $("#shareDlg");
+  $$(".sc").forEach(c => c.checked = false); $("#shareGo").disabled = true;
+  $("#shareImg").removeAttribute("src");
+  $("#shareInfo").textContent = "This is exactly what goes to " + S.shareLabel + " as “" + cfg("share.name") + "”"
+    + (cfg("share.repo") === "true" ? ", without metadata." : " – repo name blurred, no metadata.");
+  dlg.showModal();
+  await busy(null, async () => { $("#shareImg").src = src(await api("preview", {file: s.file}), 1); });
+  $("#shareGo").onclick = () => busy($("#shareGo"), async () => {
+    await api("share_shot", {file: s.file}); dlg.close(); toast("Shared ✓"); await load(); refreshViewer(s.file);
+  });
+}
+$$(".sc").forEach(c => c.onchange = () => $("#shareGo").disabled = !$$(".sc").every(x => x.checked));
+function unshareOne(btn, s) {
+  return busy(btn, async () => { await api("unshare", {file: s.file}); toast("Removed from the team gallery ✓"); await load(); refreshViewer(s.file); });
+}
+function confirmDlg({title, text, go, typeDelete, also}) {
+  return new Promise(res => {
+    const d = $("#confirmDlg");
+    $("#cTitle").textContent = title; $("#cText").textContent = text; $("#cGo").textContent = go;
+    $("#cTypeWrap").hidden = !typeDelete; $("#cType").value = ""; $("#cGo").disabled = !!typeDelete;
+    $("#cAlsoWrap").hidden = !also; $("#cAlso").checked = !!(also && also.checked); $("#cAlsoLbl").textContent = also ? also.label : "";
+    $("#cType").oninput = () => $("#cGo").disabled = $("#cType").value.trim() !== "DELETE";
+    let ok = false;
+    $("#cGo").onclick = () => { ok = true; d.close(); };
+    d.addEventListener("close", () => res(ok ? {also: $("#cAlso").checked} : null), {once: true});
+    d.showModal();
+  });
+}
+async function deleteOne(s) {
+  const r = await confirmDlg({title: "Delete this picture?", text: "This can't be undone.", go: "Delete",
+    also: s.shared ? {label: "Also remove it from the team gallery", checked: true} : null});
+  if (!r) return;
+  await busy(null, async () => { await api("forget", {file: s.file, alsoShared: !!r.also}); toast("Deleted ✓"); await load(); refreshViewer(s.file); });
+}
+function showMedia(title, file, video) {
+  $("#mTitle").textContent = title; $("#mPath").textContent = file;
+  $("#mBody").replaceChildren(video ? h("video", {src: src(file, 1), controls: true, autoplay: true, loop: true, playsinline: true})
+                                   : h("img", {src: src(file, 1), alt: title}));
+  if (!$("#mediaDlg").open) $("#mediaDlg").showModal();
+}
+$("#mediaDlg").addEventListener("close", () => $("#mBody").replaceChildren());
+$("#testBtn").onclick = e => busy(e.currentTarget, async () => showMedia("Test photo", await api("test_shot")));
+$("#timelapseBtn").onclick = e => busy(e.currentTarget, async () => {
+  const repo = $("#repoSel").value; toast("Rendering timelapse…");
+  showMedia("Timelapse" + (repo ? " · " + repo : ""), await api("timelapse", {repo}), true);
+});
+$("#wrappedBtn").onclick = e => busy(e.currentTarget, async () => {
+  const y = $("#yearSel").value; showMedia(y + " wrapped", await api("wrapped", {year: y}));
+});
+
+// ------------------------------------------------------------------ team
+function renderTeamShell() {
+  $("#teamSetup").hidden = S.sharing; $("#teamMain").hidden = !S.sharing;
+  $("#tlabel").textContent = S.sharing ? S.shareLabel : "";
+}
+async function loadTeam(refresh, btn) {
+  if (!S.sharing) return;
+  await busy(btn, async () => { TEAM = await api("team", {refresh}); drawTeam(); });
+}
+function drawTeam() {
+  const people = [...new Set(TEAM.map(r => r.name))].sort((a, b) => a.localeCompare(b));
+  const cur = $("#personSel").value;
+  $("#personSel").replaceChildren(h("option", {value: ""}, "Everyone"), ...people.map(p => h("option", {value: p}, p)));
+  $("#personSel").value = people.includes(cur) ? cur : "";
+  const p = $("#personSel").value, q = $("#tq").value.toLowerCase();
+  TVIEW = TEAM.filter(r => (!p || r.name === p) && (r.subject + " " + r.name).toLowerCase().includes(q));
+  $("#tcount").textContent = TEAM.length ? TVIEW.length + (TVIEW.length === 1 ? " picture" : " pictures") : "";
+  $("#teamEmpty").hidden = TEAM.length > 0;
+  $("#tgrid").replaceChildren(...TVIEW.map((r, i) => h("figure", {class: "shot", onclick: () => openViewer("team", i)},
+    r.mine ? h("span", {class: "badge"}, "you") : null,
+    h("img", {src: src(r.file), loading: "lazy", alt: r.subject}),
+    h("figcaption", {},
+      h("div", {class: "msg"}, r.subject),
+      h("div", {class: "meta"}, h("span", {}, r.name + (r.repo ? " · " + r.repo : "")), h("span", {}, fmtDate(r.date)))))));
+}
+$("#personSel").onchange = $("#tq").oninput = drawTeam;
+$("#syncBtn").onclick = e => loadTeam(true, e.currentTarget);
+
+// ------------------------------------------------------------------ settings
+let devicesLoaded = false;
+async function loadDevices(sel) {
+  try {
+    const devs = await api("devices"); const cur = cfg("device");
+    sel.replaceChildren(h("option", {value: ""}, "Default"), ...devs.map(d => h("option", {value: d.value}, d.label)));
+    if (cur && ![...sel.options].some(o => o.value === cur)) sel.append(h("option", {value: cur}, cur));
+    sel.value = cur;
+  } catch (e) { toast(e, true); }
+}
+function renderSettings() {
+  $("#s-hook").checked = S.hookGlobal;
+  $("#s-hook").disabled = !S.configHooks;
+  $("#hookHint").textContent = S.configHooks ? "In every repo on this computer."
+    : "Your git (" + S.gitVersion + ") is too old for global hooks – update to git 2.54 or newer.";
+  $("#pauseBtns").hidden = !!S.pausedUntil; $("#resumeRow").hidden = !S.pausedUntil; $("#pausedLbl").textContent = pausedText();
+  $("#s-dir").textContent = S.dir;
+  $("#s-delay").value = cfg("delay", "1.5"); $("#delayVal").textContent = $("#s-delay").value + " s";
+  $("#s-login").checked = S.autostart;
+  $("#teamOff").hidden = S.sharing; $("#teamOn").hidden = !S.sharing;
+  $("#teamSub").textContent = S.sharing ? "Shared as “" + cfg("share.name") + "”." : "Not set up. Pictures stay on this computer.";
+  $("#teamTarget").textContent = S.shareLabel;
+  for (const el of $$("[data-key]")) {
+    if (document.activeElement === el) continue;
+    const v = cfg(el.dataset.key);
+    if (el.type === "checkbox") el.checked = v === "true"; else el.value = v === "0" ? "" : v;
+  }
+  const dev = $("#s-device");
+  if (!devicesLoaded && cfg("device")) { dev.replaceChildren(h("option", {value: cfg("device")}, cfg("device"))); dev.value = cfg("device"); }
+}
+async function save(key, value, label) {
+  try { await api("set_config", {key, value}); toast((label || "Saved") + " ✓"); await load(); }
+  catch (e) { toast(e, true); }
+}
+for (const el of $$("[data-key]")) {
+  el.addEventListener("change", () => save(el.dataset.key, el.type === "checkbox" ? (el.checked ? "true" : "") : el.value));
+}
+$("#s-auto").addEventListener("click", async e => {
+  if (!e.target.checked) return;
+  e.preventDefault();
+  if (await confirmDlg({title: "Share every photo automatically?", text: "Every commit photo goes to the team gallery without a preview. Nobody checks who is in the background or what the commit message says.", go: "Turn on"}))
+    save("share.auto", "true");
+});
+$("#s-hook").onchange = e => busy(null, async () => {
+  await api(e.target.checked ? "enable_global" : "disable_global"); toast(e.target.checked ? "On ✓" : "Turned off ✓"); await load();
+}).then(load);
+$$("[data-pause]").forEach(b => b.onclick = () => busy(b, async () => { await api("pause", {minutes: +b.dataset.pause}); await load(); }));
+$("#s-device").onfocus = () => { if (!devicesLoaded) { devicesLoaded = true; loadDevices($("#s-device")); } };
+$("#s-device").onchange = e => save("device", e.target.value, "Camera saved");
+$("#s-delay").oninput = e => $("#delayVal").textContent = e.target.value + " s";
+$("#s-delay").onchange = e => save("delay", e.target.value);
+$("#s-login").onchange = e => busy(null, async () => { await api("set_autostart", {on: e.target.checked}); await load(); });
+$("#cliBtn").onclick = e => busy(e.currentTarget, async () => toast("Installed: " + await api("install_cli")));
+$("#disconnectBtn").onclick = async () => {
+  if (!await confirmDlg({title: "Stop sharing from this computer?", text: "Your pictures already in the team gallery stay there. Use Privacy › Unshare all to remove them.", go: "Disconnect"})) return;
+  await busy(null, async () => { await api("disconnect_sharing"); toast("Disconnected ✓"); await load(); });
+};
+
+// ------------------------------------------------------------------ privacy
+function renderPrivacy() {
+  $("#p-dir").textContent = S.dir;
+  $("#p-target").textContent = S.sharing ? "Shared to " + S.shareLabel + " as “" + cfg("share.name") + "”." : "Sharing is off.";
+  $("#p-repo").textContent = cfg("share.repo") === "true" ? "with repo name and commit hash visible" : "with repo name and commit hash blurred";
+  const days = +cfg("share.retention", "0");
+  $("#p-keep").textContent = days > 0 ? "It is removed after " + days + " days." : "It stays until you take it back (no expiry set).";
+  const n = S.shots.filter(s => s.shared).length;
+  $("#p-count").textContent = (n === 1 ? "1 picture" : n + " pictures") + " shared from this computer.";
+  $("#unshareAllBtn").disabled = !S.sharing;
+}
+$("#unshareAllBtn").onclick = async e => {
+  const btn = e.currentTarget;
+  if (!await confirmDlg({title: "Remove all your shared pictures?", text: "Your folder in " + S.shareLabel + " is deleted, including pictures shared from other computers. Local pictures stay.", go: "Unshare all"})) return;
+  await busy(btn, async () => { await api("unshare", {file: null}); toast("All your shared pictures are gone ✓"); await load(); });
+};
+$("#forgetAllBtn").onclick = async e => {
+  const btn = e.currentTarget;
+  const r = await confirmDlg({title: "Delete everything?", text: "All pictures on this computer are deleted. This can't be undone.", go: "Delete all", typeDelete: true,
+    also: S.sharing ? {label: "Also remove my pictures from the team gallery", checked: false} : null});
+  if (!r) return;
+  await busy(btn, async () => { await api("forget", {file: null, alsoShared: !!r.also}); toast("Everything deleted ✓"); await load(); });
+};
+
+// ------------------------------------------------------------------ generic actions
+document.addEventListener("click", e => {
+  const a = e.target.closest("[data-act]"); if (!a) return;
+  const act = a.dataset.act;
+  if (act === "resume") busy(a, async () => { await api("resume"); await load(); });
+  if (act === "enable") busy(a, async () => { await api("enable_global"); toast("On ✓"); await load(); });
+  if (act === "setup-team") openWizard("team", true);
+  if (act === "wizard") openWizard("welcome");
+  if (act === "privacy-doc") openPrivacy();
+});
+
+// ------------------------------------------------------------------ privacy guide
+// Tiny Markdown renderer for PRIVACY.md: headings, tables, lists, quotes, **bold**, `code`.
+function md(text) {
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/^\[ \] /, "☐ ").replace(/^\[x\] /i, "☑ ");
+  const out = []; let list = 0, table = null, quote = null, para = [];
+  const flushPara = () => { if (para.length) { out.push("<p>" + para.map(inline).join(" ") + "</p>"); para = []; } };
+  const closeList = () => { while (list > 0) { out.push("</ul>"); list--; } };
+  const flushTable = () => { if (table) { out.push("<table>" + table.join("") + "</table>"); table = null; } };
+  const flushQuote = () => { if (quote) { out.push("<blockquote>" + md(quote.join("\n")) + "</blockquote>"); quote = null; } };
+  for (const raw of text.split("\n")) {
+    const line = raw.replace(/\s+$/, "");
+    if (line.startsWith(">")) { flushPara(); closeList(); flushTable(); (quote = quote || []).push(line.replace(/^> ?/, "")); continue; }
+    flushQuote();
+    if (/^\|/.test(line)) {
+      flushPara(); closeList();
+      if (/^\|[\s|:-]+\|$/.test(line)) continue;
+      const cells = line.slice(1, -1).split("|").map(c => inline(c.trim()));
+      const tag = table ? "td" : "th";
+      (table = table || []).push("<tr>" + cells.map(c => `<${tag}>${c}</${tag}>`).join("") + "</tr>");
+      continue;
+    }
+    flushTable();
+    const li = line.match(/^(\s*)- (.*)$/);
+    if (li) {
+      flushPara();
+      const depth = Math.floor(li[1].length / 2) + 1;
+      while (list < depth) { out.push("<ul>"); list++; }
+      while (list > depth) { out.push("</ul>"); list--; }
+      out.push("<li>" + inline(li[2]) + "</li>");
+      continue;
+    }
+    closeList();
+    const hd = line.match(/^(#{1,3}) (.*)$/);
+    if (hd) { flushPara(); out.push(`<h${hd[1].length}>${inline(hd[2])}</h${hd[1].length}>`); continue; }
+    if (!line) { flushPara(); continue; }
+    para.push(line);
+  }
+  flushPara(); closeList(); flushTable(); flushQuote();
+  return out.join("\n");
+}
+async function openPrivacy() {
+  try {
+    $("#docBody").innerHTML = md(await api("privacy_doc"));
+    $("#docDlg").showModal(); $("#docDlg .doc").scrollTop = 0;
+  } catch (e) { toast(e, true); }
+}
+$("#docWeb").onclick = () => TAURI.opener.openUrl(PRIVACY_URL).catch(e => toast(e, true));
+
+// ------------------------------------------------------------------ wizard
+const STEPS = ["welcome", "fair", "camera", "enable", "team", "done"];
+let wzStep = 0, wzOnly = false;
+function openWizard(step, only) {
+  wzOnly = !!only; wzStep = STEPS.indexOf(step);
+  $("#wizard").hidden = false; showStep();
+}
+function closeWizard() { $("#wizard").hidden = true; load(); }
+function showStep() {
+  $$(".step").forEach(s => s.hidden = s.dataset.step !== STEPS[wzStep]);
+  $("#dots").replaceChildren(...(wzOnly ? [] : STEPS.map((_, i) => h("i", {class: i <= wzStep ? "on" : ""}))));
+  const st = STEPS[wzStep];
+  if (st === "camera") wzCamera();
+  if (st === "enable") wzEnableState();
+  if (st === "team") wzTeam();
+}
+function next() {
+  if (wzOnly) return closeWizard();
+  wzStep = Math.min(wzStep + 1, STEPS.length - 1); showStep();
+}
+$$("[data-next]").forEach(b => b.onclick = next);
+$$("[data-back]").forEach(b => b.onclick = () => { if (wzOnly) return closeWizard(); wzStep = Math.max(0, wzStep - 1); showStep(); });
+
+function wzCamera() {
+  $("#camAsk").hidden = S.cameraOk; $("#camOk").hidden = !S.cameraOk;
+  $("#wzDelay").value = cfg("delay", "1.5"); $("#wzDelayVal").textContent = $("#wzDelay").value + " s";
+  if (S.cameraOk) loadDevices($("#wzDevice"));
+}
+$("#camAllowBtn").onclick = e => busy(e.currentTarget, async () => {
+  const ok = await api("camera_permission");
+  await load(); $("#camDenied").hidden = ok; wzCamera();
+});
+$("#wzDevice").onchange = e => api("set_config", {key: "device", value: e.target.value}).catch(err => toast(err, true));
+$("#wzDelay").oninput = e => $("#wzDelayVal").textContent = e.target.value + " s";
+$("#wzDelay").onchange = e => api("set_config", {key: "delay", value: e.target.value}).catch(err => toast(err, true));
+$("#wzTestBtn").onclick = e => busy(e.currentTarget, async () => {
+  $("#wzShot").replaceChildren("📸 Say cheese…");
+  const f = await api("test_shot");
+  $("#wzShot").replaceChildren(h("img", {src: src(f, 1), alt: "Test photo"}));
+  $("#camNext").disabled = false;
+});
+
+function wzEnableState() {
+  const on = S.hookGlobal;
+  $("#wzEnable").classList.toggle("sel", on);
+  $("#wzEnableState").textContent = on ? "✓ On" : "Turn on";
+  $("#wzEnableState").className = "go" + (on ? " ok" : "");
+  if (!S.configHooks) $("#wzEnableD").textContent = "Needs git 2.54 or newer – you have " + S.gitVersion + ". Update git, then come back.";
+  $("#wzEnable").disabled = !S.configHooks;
+}
+$("#wzEnable").onclick = e => busy(null, async () => {
+  if (!S.hookGlobal) await api("enable_global"); await load(); wzEnableState();
+});
+
+async function wzTeam() {
+  $("#wzTeamPick").hidden = false; $("#wzTeamName").hidden = true; $("#wzTeamSave").hidden = true;
+  $("#wzTeamSkip").hidden = false; $("#wzRclone").hidden = true;
+  $("#wzTeamSkip").textContent = wzOnly ? "Cancel" : "Skip – keep everything on this computer";
+  const folders = await api("drive_folders").catch(() => []);
+  $("#wzDriveBox").hidden = !folders.length;
+  $("#wzDrives").replaceChildren(...folders.map(f => h("button", {class: "opt", onclick: e => wzUseFolder(e.currentTarget, f.path, "Google Drive › " + f.name)},
+    h("span", {class: "ic"}, "🟡"),
+    h("span", {}, h("div", {class: "t"}, f.name), h("div", {class: "d"}, "Shared drive · " + f.account + " · no sign-in needed")),
+    h("span", {class: "go"}, "›"))));
+  if (!folders.length && S.platform === "macos") $("#wzGoogleD").textContent = "Google Drive for desktop isn't installed – sign in here instead.";
+}
+function wzUseFolder(btn, path, label) {
+  return busy(btn, async () => { await api("use_folder", {path, label}); await wzConnected(label); });
+}
+async function wzConnected(label) {
+  await load();
+  $("#wzTeamPick").hidden = true; $("#wzTeamName").hidden = false; $("#wzTeamSave").hidden = false; $("#wzTeamSkip").hidden = true;
+  $("#wzTeamOk").textContent = "✓ Connected to " + label;
+  $("#wzName").value = cfg("share.name") || await api("first_name");
+  $("#wzName").focus();
+}
+$("#wzTeamSave").onclick = e => busy(e.currentTarget, async () => {
+  const name = $("#wzName").value.trim();
+  if (!name) throw "Please enter a name (a nickname is fine).";
+  await api("set_config", {key: "share.name", value: name});
+  await load(); next();
+});
+$("#wzFolder").onclick = async e => {
+  const path = await TAURI.dialog.open({directory: true, title: "Folder for the team gallery"});
+  if (path) wzUseFolder(e.currentTarget, path, path.split("/").filter(Boolean).slice(-1)[0]);
+};
+$("#wzGoogle").onclick = e => busy(e.currentTarget, async () => {
+  const box = $("#wzRclone"); box.hidden = false;
+  const st = await api("rclone_status");
+  if (!st.installed) {
+    box.replaceChildren(h("b", {}, "One more piece: rclone"),
+      "Signing in to Google Drive uses rclone, a free tool for cloud storage. ",
+      st.brew ? h("button", {class: "btn primary", onclick: ev => busy(ev.currentTarget, async () => { await api("brew_install", {pkg: "rclone"}); toast("rclone installed ✓"); $("#wzGoogle").click(); })}, "Install rclone")
+              : h("button", {class: "btn link", onclick: () => TAURI.opener.openUrl("https://rclone.org/downloads/")}, "Download rclone"));
+    return;
+  }
+  box.replaceChildren(h("b", {}, "Waiting for Google…"), "Finish the sign-in in your browser, then come back here.");
+  const drives = await api("rclone_connect");
+  if (!drives.length) { box.replaceChildren(h("b", {}, "No shared drives"), "Your Google account has no shared drives. Ask your admin to create one, e.g. “lolcommits”, and add your team."); return; }
+  box.replaceChildren(h("b", {}, "Pick a shared drive"), h("div", {class: "choice", style: "margin-top:8px"},
+    ...drives.map(d => h("button", {class: "opt", onclick: ev => busy(ev.currentTarget, async () => {
+      await api("rclone_use", {id: d.id, name: d.name}); await wzConnected("Google Drive › " + d.name);
+    })}, h("span", {class: "ic"}, "🟡"), h("span", {}, h("div", {class: "t"}, d.name)), h("span", {class: "go"}, "›")))));
+});
+$("#wzFinish").onclick = e => busy(e.currentTarget, async () => {
+  await api("set_autostart", {on: $("#wzLogin").checked}).catch(() => {});
+  await api("finish_setup");
+  closeWizard(); route("shots");
+});
+
+// ------------------------------------------------------------------ routing, events
+function route(v) {
+  view = ["shots", "team", "settings", "privacy"].includes(v) ? v : "shots";
+  $$("main > section").forEach(s => s.hidden = s.id !== "v-" + view);
+  $$("nav a").forEach(a => a.classList.toggle("on", a.dataset.v === view));
+  if (view === "team") loadTeam(true, $("#syncBtn"));
+}
+$$("nav a").forEach(a => a.onclick = () => route(a.dataset.v));
+
+(async () => {
+  try { await load(); } catch (e) { toast(e, true); return; }
+  route("shots");
+  if (!S.setupDone) openWizard("welcome");
+  const ev = TAURI.event;
+  ev.listen("shots-changed", () => { if (!document.querySelector("dialog[open]")) load(); });
+  ev.listen("navigate", e => { if ($("#wizard").hidden) route(e.payload); });
+  ev.listen("show-file", e => showMedia("Test photo", e.payload));
+  ev.listen("share-last", async () => {
+    await load(); route("shots");
+    const s = S.shots[0]; if (s && !s.shared && S.sharing) { list = filteredShots(); shareFlow(s); }
+  });
+})();
+</script>
+</body>
+</html>
