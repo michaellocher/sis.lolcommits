@@ -64,7 +64,16 @@
           "git"
         ]
       }
-    }
+    },
+    "createUpdaterArtifacts": false
   },
-  "mainBinaryName": "lolcommits-app"
+  "mainBinaryName": "lolcommits-app",
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRFMjEzOTQ0QjU2MUJCQTYKUldTbXUyRzFSRGtoVGtqV0UrZDRtY3pvMENoc1JYRndiTWR1Y3I0RVZwNWxMTXh2MC9xeU4zUGoK",
+      "endpoints": [
+        "https://github.com/simon-scherzinger/sis.lolcommits/releases/latest/download/latest.json"
+      ]
+    }
+  }
 }

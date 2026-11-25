@@ -1,5 +1,6 @@
 # Builds lolcommits.app (macOS universal, signed + notarized when the Apple
-# secrets are set) and Linux packages for every version tag like 0.3.0.
+# secrets are set) and Linux packages for every version tag like 0.3.0, plus
+# the signed update archives and latest.json the app's updater reads.
 name: release
 
 on:
@@ -39,10 +40,10 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            args: --target universal-apple-darwin
+            args: --target universal-apple-darwin --config src-tauri/tauri.updater.conf.json
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
           - os: ubuntu-22.04
-            args: ''
+            args: --config src-tauri/tauri.updater.conf.json
             rust_targets: ''
     runs-on: ${{ matrix.os }}
     env:
@@ -102,6 +103,9 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # signs the update archives; the app checks them against the pubkey in tauri.conf.json
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
           releaseId: ${{ needs.release.outputs.id }}

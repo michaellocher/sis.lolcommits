@@ -308,6 +308,15 @@ nav a .n{display:inline-block;min-width:18px;padding:0 5px;margin-left:5px;borde
       </div>
 
       <div class="card">
+        <h3>Updates</h3><p class="sub" id="updSub"></p>
+        <div class="field"><label>Status</label>
+          <div class="row"><span id="updLbl"></span><button class="btn" id="updCheck">Check now</button><button class="btn primary" id="updInstall" hidden>Install and restart</button></div>
+          <div class="hint" id="updNotes" style="white-space:pre-wrap;max-height:160px;overflow:auto"></div></div>
+        <div class="field"><label for="s-upauto">Check automatically</label><input type="checkbox" class="switch" id="s-upauto">
+          <div class="hint">Looks for a new version on GitHub every few hours. Installing always waits for your click.</div></div>
+      </div>
+
+      <div class="card">
         <h3>App</h3><p class="sub">lolcommits lives in the menu bar. Closing this window keeps it running.</p>
         <div class="field"><label for="s-login">Start at login</label><input type="checkbox" class="switch" id="s-login"></div>
         <div class="field"><label>Command line tool</label><button class="btn" id="cliBtn">Install `lolcommits` command</button>
@@ -720,6 +729,7 @@ async function loadDevices(sel) {
   } catch (e) { toast(e, true); }
 }
 function renderSettings() {
+  loadUpdate();
   $("#s-hook").checked = S.hookGlobal;
   $("#s-hook").disabled = !S.configHooks;
   $("#hookHint").textContent = S.configHooks ? "In every repo on this computer."
@@ -772,6 +782,37 @@ $("#disconnectBtn").onclick = async () => {
   if (!await confirmDlg({title: "Stop sharing from this computer?", text: "Your pictures already in the team gallery stay there. Use Privacy › Unshare all to remove them.", go: "Disconnect"})) return;
   await busy(null, async () => { await api("disconnect_sharing"); toast("Disconnected ✓"); await load(); });
 };
+
+// ------------------------------------------------------------------ updates
+let U = null;
+function ago(t) {
+  const m = Math.round((Date.now() / 1000 - t) / 60);
+  return m < 1 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " days ago";
+}
+function renderUpdate(u) {
+  if (u) U = u;
+  if (!U) return;
+  $("#updSub").textContent = "You have version " + U.current + ".";
+  const inst = $("#updInstall");
+  inst.hidden = !U.available;
+  inst.disabled = U.progress != null;
+  inst.textContent = U.progress != null ? "Updating… " + U.progress + "%" : "Install " + (U.available || "") + " and restart";
+  $("#updCheck").disabled = U.checking || U.progress != null;
+  $("#updLbl").textContent = U.error ? "⚠ " + U.error
+    : U.checking ? "Checking…"
+    : U.available ? "Version " + U.available + " is available."
+    : U.checked ? "Up to date (checked " + ago(U.checked) + ")."
+    : "Not checked yet.";
+  $("#updNotes").textContent = U.available ? U.notes : "";
+  $("#s-upauto").checked = cfg("update.auto") !== "false";
+}
+async function loadUpdate() { try { renderUpdate(await api("update_status")); } catch (e) {} }
+$("#updCheck").onclick = e => busy(e.currentTarget, async () => {
+  const v = await api("update_check");
+  if (!v) toast("lolcommits is up to date ✓");
+});
+$("#updInstall").onclick = e => busy(e.currentTarget, async () => { await api("update_install"); });
+$("#s-upauto").onchange = e => save("update.auto", e.target.checked ? "" : "false");
 
 // ------------------------------------------------------------------ privacy
 function renderPrivacy() {
@@ -1127,6 +1168,7 @@ $$("nav a").forEach(a => a.onclick = () => route(a.dataset.v));
   const ev = TAURI.event;
   ev.listen("shots-changed", () => { if (!document.querySelector("dialog[open]")) load(); });
   ev.listen("navigate", e => { if ($("#wizard").hidden) route(e.payload); });
+  ev.listen("update-changed", e => renderUpdate(e.payload));
   ev.listen("show-file", e => showMedia("Test photo", e.payload));
 
 })();

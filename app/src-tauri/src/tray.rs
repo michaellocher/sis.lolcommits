@@ -1,7 +1,7 @@
 //! Menu bar icon: drawn at runtime as a template image (macOS tints it for
 //! light/dark menu bars). The lens closes like a shutter and a flash fires
 //! while a photo is being taken.
-use crate::{config, share, store};
+use crate::{config, share, store, update};
 use image::{Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_filled_rect_mut, draw_line_segment_mut};
 use imageproc::rect::Rect;
@@ -175,6 +175,13 @@ pub fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         items.push(Box::new(MenuItem::with_id(app, "review", label, true, None::<&str>)?));
     }
     items.push(Box::new(sep2));
+    let up = update::status(app);
+    let up_item = match (&up.progress, &up.available) {
+        (Some(p), _) => MenuItem::with_id(app, "updating", format!("Updating… {p}%"), false, None::<&str>)?,
+        (None, Some(v)) => MenuItem::with_id(app, "update", format!("Update to {v} and restart"), true, None::<&str>)?,
+        _ => MenuItem::with_id(app, "check-update", "Check for updates…", true, None::<&str>)?,
+    };
+    items.push(Box::new(up_item));
     items.push(Box::new(settings));
     items.push(Box::new(login));
     items.push(Box::new(sep3));

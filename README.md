@@ -10,6 +10,7 @@ Remake of the old [lolcommits](https://github.com/lolcommits/lolcommits) Ruby ge
 - **Hot or not:** new photos wait in a review stack. Swipe right to share one with your team, left to keep it to yourself. Undo is ⌘Z.
 - **Team gallery, privacy first:** a Google shared drive with one folder per repo. Client repos stay anonymous, and one click takes everything back ([details](#team-gallery)).
 - **Extras:** gallery with search, timelapse video, year-in-review contact sheet ("wrapped").
+- **Updates:** the app looks for new releases every few hours and installs one when you click "Update and restart" in the menu.
 
 ## Install
 
@@ -114,6 +115,7 @@ Everything is plain git config, shared by the app and the command line:
 | `lolcommits.share.name` | – | your name in the gallery, also the folder name |
 | `lolcommits.share.retention` | `0` (keep) | delete your shared pictures after N days |
 | `lolcommits.share.auto` | `false` | upload every photo without review (repos not asked yet stay hidden) |
+| `lolcommits.update.auto` | `true` | look for app updates on GitHub every few hours |
 
 Per-repo choices live in `~/.lolcommits/repo-names.tsv` (`repo`, tab, `show` or `hide`).
 
@@ -139,4 +141,6 @@ npm run build        # lolcommits.app + dmg in src-tauri/target/release/bundle
 - **Signing:** with the Developer ID of entrecode GmbH (team `MAMAYY5H8H`, set in the workflow). Needs the secrets `APPLE_CERTIFICATE` (the .p12 as base64), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID` and `APPLE_PASSWORD` (app-specific password).
 - **Signed build on your Mac:** `APPLE_SIGNING_IDENTITY="Developer ID Application: entrecode GmbH (MAMAYY5H8H)" npm run build`, the certificate must be in your keychain.
 - **Without them:** the build is unsigned.
+- **Updates:** CI also builds signed update archives and `latest.json`, which the app reads from the latest release. They need the secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The public key is in `tauri.conf.json`. Drafts don't count as latest, so an update reaches users once the release is published.
+- **Test an update locally:** `LOLCOMMITS_UPDATE_URL=http://…/latest.json` points the app at another manifest and checks after 3 seconds (http only with `dangerousInsecureTransportProtocol` in a test build).
 - **Version:** keep `version` in `app/src-tauri/tauri.conf.json` in line with the tag.

@@ -9,6 +9,7 @@ mod render;
 mod share;
 mod store;
 mod tray;
+mod update;
 #[cfg(test)]
 mod tests;
 
@@ -24,7 +25,7 @@ type R<T> = Result<T, String>;
 
 /// Settings the UI may change directly. Share targets only change through the
 /// setup commands below, which test the connection first.
-const KEYS: [&str; 6] = ["device", "delay", "retention", "share.name", "share.retention", "share.auto"];
+const KEYS: [&str; 7] = ["device", "delay", "retention", "share.name", "share.retention", "share.auto", "update.auto"];
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -438,6 +439,23 @@ fn install_cli(app: AppHandle) -> R<String> {
     Ok(link.to_string_lossy().to_string())
 }
 
+// ---------------------------------------------------------------- updates
+
+#[tauri::command(async)]
+fn update_status(app: AppHandle) -> update::Status {
+    update::status(&app)
+}
+
+#[tauri::command]
+async fn update_check(app: AppHandle) -> R<Option<String>> {
+    update::check(&app).await
+}
+
+#[tauri::command]
+async fn update_install(app: AppHandle) -> R<()> {
+    update::install(&app).await
+}
+
 // ---------------------------------------------------------------- window, tray
 
 fn show_main(app: &AppHandle, route: Option<&str>) {
@@ -473,6 +491,22 @@ fn on_menu(app: &AppHandle, id: &str) {
         "autostart" => {
             let on = app.autolaunch().is_enabled().unwrap_or(false);
             let _ = set_autostart(app.clone(), !on);
+        }
+        "update" => {
+            let a = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = update::install(&a).await {
+                    store::log(&format!("update failed: {e}"));
+                    show_main(&a, Some("settings"));
+                }
+            });
+        }
+        "check-update" => {
+            show_main(app, Some("settings"));
+            let a = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = update::check(&a).await;
+            });
         }
         "quit" => app.exit(0),
         _ => {}
@@ -512,13 +546,14 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app, None)))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--background"])))
         .invoke_handler(tauri::generate_handler![
             get_state, set_config, enable_global, disable_global, pause, resume, camera_permission, devices,
             test_shot, preview, share_shot, unshare, forget, team, wrapped, timelapse, drive_folders, use_folder,
             rclone_status, brew_install, rclone_connect, rclone_use, disconnect_sharing, finish_setup,
             set_autostart, first_name, install_cli, privacy_doc, set_private,
-            repo_choices, set_repo_choice
+            repo_choices, set_repo_choice, update_status, update_check, update_install
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -537,6 +572,7 @@ fn main() {
                 .build(app)?;
             queue::start(handle.clone());
             watch(handle.clone());
+            update::start(handle.clone());
             let setup_done = config::get("setup").is_some();
             if !background || !setup_done {
                 show_main(&handle, None);

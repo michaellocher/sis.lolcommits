@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Updates:** the app checks GitHub for new releases every few hours (Settings › Updates, menu "Check for updates…") and installs them on click, signed with a separate update key. Waits for a photo in progress before restarting.
+
 ## 0.3.0
 
 First release as a menu bar app.
