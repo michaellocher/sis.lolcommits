@@ -55,10 +55,10 @@ jobs:
           {
             echo "APPLE_CERTIFICATE=${{ secrets.APPLE_CERTIFICATE }}"
             echo "APPLE_CERTIFICATE_PASSWORD=${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
-            echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}"
+            echo "APPLE_SIGNING_IDENTITY=Developer ID Application: entrecode GmbH (MAMAYY5H8H)"
             echo "APPLE_ID=${{ secrets.APPLE_ID }}"
             echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}"
-            echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}"
+            echo "APPLE_TEAM_ID=MAMAYY5H8H"
           } >> "$GITHUB_ENV"
 
       - name: Install

@@ -136,6 +136,7 @@ npm run build        # lolcommits.app + dmg in src-tauri/target/release/bundle
 ```
 
 **Releases:** pushing a tag like `0.3.0` builds signed and notarized macOS and Linux packages ([release.yml](.github/workflows/release.yml)).
-- **Signing:** needs the secrets `APPLE_CERTIFICATE` (Developer ID Application, .p12 as base64), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` (app-specific password) and `APPLE_TEAM_ID`.
+- **Signing:** with the Developer ID of entrecode GmbH (team `MAMAYY5H8H`, set in the workflow). Needs the secrets `APPLE_CERTIFICATE` (the .p12 as base64), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID` and `APPLE_PASSWORD` (app-specific password).
+- **Signed build on your Mac:** `APPLE_SIGNING_IDENTITY="Developer ID Application: entrecode GmbH (MAMAYY5H8H)" npm run build`, the certificate must be in your keychain.
 - **Without them:** the build is unsigned.
 - **Version:** keep `version` in `app/src-tauri/tauri.conf.json` in line with the tag.
