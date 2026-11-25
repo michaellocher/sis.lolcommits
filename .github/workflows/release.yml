@@ -11,7 +11,29 @@ permissions:
   contents: write
 
 jobs:
+  # One draft release with the notes from CHANGELOG.md; both builds upload into it.
+  release:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.create.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: create
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ github.ref_name }}
+        run: |
+          awk -v v="$V" '$0 ~ "^## "v"( |$)" {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "See CHANGELOG.md." > notes.md
+          printf '\n**Download:** the `.dmg` for macOS (Apple Silicon and Intel), the `.AppImage` or `.deb` for Linux. Open it and follow the setup.\n' >> notes.md
+          gh release create "$V" --draft --verify-tag --title "lolcommits $V" --notes-file notes.md
+          echo "id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$V\") | .id" | head -1)" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: release
+    # also runs without a tag (workflow_dispatch), then it only builds
+    if: always() && (needs.release.result == 'success' || needs.release.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
@@ -49,15 +71,21 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libclang-dev libv4l-dev
 
       - name: Apple signing and notarization
-        # only when the secrets exist; otherwise the build is unsigned
+        # only when the secrets exist; otherwise the build is unsigned.
+        # Secrets come in via env, so no value is pasted into the script.
         if: runner.os == 'macOS' && env.HAS_APPLE_CERT == 'true'
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PW: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          ID: ${{ secrets.APPLE_ID }}
+          PW: ${{ secrets.APPLE_PASSWORD }}
         run: |
           {
-            echo "APPLE_CERTIFICATE=${{ secrets.APPLE_CERTIFICATE }}"
-            echo "APPLE_CERTIFICATE_PASSWORD=${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+            echo "APPLE_CERTIFICATE=$CERT"
+            echo "APPLE_CERTIFICATE_PASSWORD=$CERT_PW"
             echo "APPLE_SIGNING_IDENTITY=Developer ID Application: entrecode GmbH (MAMAYY5H8H)"
-            echo "APPLE_ID=${{ secrets.APPLE_ID }}"
-            echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}"
+            echo "APPLE_ID=$ID"
+            echo "APPLE_PASSWORD=$PW"
             echo "APPLE_TEAM_ID=MAMAYY5H8H"
           } >> "$GITHUB_ENV"
 
@@ -76,8 +104,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: app
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: lolcommits ${{ github.ref_name }}
-          releaseBody: Download lolcommits.dmg (macOS) or the .AppImage / .deb (Linux), open it and follow the setup.
-          releaseDraft: true
+          releaseId: ${{ needs.release.outputs.id }}
           args: ${{ matrix.args }}

@@ -13,7 +13,7 @@ Remake of the old [lolcommits](https://github.com/lolcommits/lolcommits) Ruby ge
 
 ## Install
 
-1. Download `lolcommits.dmg` from the [latest release](https://github.com/simon-scherzinger/sis.lolcommits/releases) and move lolcommits to Applications.
+1. Download the `.dmg` from the [latest release](https://github.com/simon-scherzinger/sis.lolcommits/releases) and move lolcommits to Applications.
 2. Open it. The assistant walks you through:
    - **Fair use:** what stays on your Mac and what is shared (GDPR versus team spirit, in short)
    - **Camera:** allow it once and take a test photo
