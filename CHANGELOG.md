@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2
+
+- **Team gallery setup for everyone:** setting up a shared drive no longer fails with "can't write there … File not found" if you aren't a manager of the shared drive. Content managers are enough; if your role is too low, the app says so.
+- **Taking pictures back:** if your role doesn't allow deleting for good, pictures go to the shared drive's trash instead of silently staying in the gallery.
+
 ## 0.4.1
 
 - **Download without warning:** the `.dmg` itself is now notarized too, not only the app inside, so macOS opens a downloaded disk image without asking.
