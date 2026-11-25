@@ -461,7 +461,10 @@ share_put() {
 share_rm() {
   local b; b="$(share_base)"
   case "$(share_mode)" in
-    rclone) rclone deletefile "${RCLONE_FLAGS[@]}" "$b/$1" 2>/dev/null || ! rclone lsf "$b/$1" >/dev/null 2>&1 ;;
+    # only shared-drive managers may delete for good; others fall back to the trash
+    rclone) rclone deletefile "${RCLONE_FLAGS[@]}" "$b/$1" 2>/dev/null ||
+              rclone deletefile --drive-use-trash=true "$b/$1" 2>/dev/null ||
+              [ -z "$(rclone lsf "$b/$1" 2>/dev/null)" ] ;;
     ssh)    ssh "${b%%:*}" "rm -f $(fq "${b#*:}/$1"); rmdir $(fq "$(dirname "${b#*:}/$1")") 2>/dev/null; true" </dev/null ;;
     local)  rm -f "$b/$1" && { rmdir "$(dirname "$b/$1")" 2>/dev/null; true; } ;;
   esac
