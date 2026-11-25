@@ -1,0 +1,387 @@
+#!/usr/bin/env bash
+# lolcommits (2027 edition) – takes a webcam selfie on every git commit
+# and puts the commit message on it. Needs: bash, git >= 2.54, ffmpeg.
+# Runs on macOS (avfoundation) and Linux (v4l2).
+set -u
+
+VERSION="0.1.0"
+LOLDIR="${LOLCOMMITS_DIR:-$(git config --get lolcommits.dir 2>/dev/null || echo "$HOME/.lolcommits")}"
+LOLDIR="${LOLDIR/#\~/$HOME}"
+INDEX="$LOLDIR/index.tsv"
+LOG="$LOLDIR/lolcommits.log"
+OS="$(uname -s)"
+
+die()  { printf 'lolcommits: %s\n' "$*" >&2; exit 1; }
+info() { printf '%s\n' "$*"; }
+cfg()  { git config --get "lolcommits.$1" 2>/dev/null || printf '%s' "${2:-}"; }
+need() { command -v "$1" >/dev/null 2>&1 || die "$1 not found – install it first (macOS: brew install $1, Linux: apt/dnf install $1)"; }
+open_file() {
+  [ -n "${LOLCOMMITS_NO_OPEN:-}" ] && return 0
+  if [ "$OS" = Darwin ]; then open "$1"; else xdg-open "$1" >/dev/null 2>&1 & fi
+}
+iso_now() { date +%Y-%m-%dT%H:%M:%S%z | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/'; }
+
+usage() {
+  cat <<EOF
+lolcommits $VERSION – a selfie for every commit
+
+Usage: lolcommits <command> [options]
+
+  enable [--global]     run on every commit (this repo, or all repos with --global)
+  disable [--global]    stop running
+  status                show hook + config state
+  test                  take a test shot right now and open it
+  last                  open the latest lolcommit
+  gallery               build an HTML gallery and open it
+  timelapse [repo]      render an mp4 of all shots (or one repo)
+  wrapped [year]        contact sheet of a year's commits (default: this year)
+  devices               list cameras
+  doctor                check dependencies
+
+Config (git config [--global] lolcommits.<key> <value>):
+  device    camera: macOS index/name (default 0), Linux path (default /dev/video0)
+  delay     seconds to let the camera warm up (default 1.5)
+  size      capture size (default 1280x720)
+  font      path to a .ttf (default: Impact, else DejaVu Sans Bold)
+  dir       where pictures go (default ~/.lolcommits)
+  enabled   set to false to pause in one repo without touching hooks
+
+Skip a single commit with LOLCOMMITS_SKIP=1 git commit ...
+EOF
+}
+
+# ---------------------------------------------------------------- hook setup
+# Uses git's config-based hooks (git 2.54+), so existing .git/hooks scripts
+# and core.hooksPath setups stay untouched.
+cmd_enable() {
+  local scope="--local"
+  [ "${1:-}" = "--global" ] && scope="--global"
+  [ "$scope" = "--local" ] && { git rev-parse --git-dir >/dev/null 2>&1 || die "not inside a git repo (use --global?)"; }
+  local self; self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+  if has_config_hooks; then
+    git config "$scope" --unset-all hook.lolcommits.event 2>/dev/null
+    git config "$scope" hook.lolcommits.event post-commit
+    git config "$scope" hook.lolcommits.command "\"$self\" capture"
+  else
+    # git < 2.54: append to the classic hook script, keeping whatever is in it
+    [ "$scope" = "--global" ] && die "--global needs git 2.54+ (you have $(git_version)); run 'lolcommits enable' per repo instead"
+    local hook; hook="$(legacy_hook_path)"
+    mkdir -p "$(dirname "$hook")"
+    [ -f "$hook" ] || printf '#!/bin/sh\n' >"$hook"
+    grep -q "$HOOK_MARK" "$hook" || printf '"%s" capture %s\n' "$self" "$HOOK_MARK" >>"$hook"
+    chmod +x "$hook"
+  fi
+  info "lolcommits enabled (${scope#--}). Smile on your next commit."
+}
+
+cmd_disable() {
+  local scope="--local" done=0
+  [ "${1:-}" = "--global" ] && scope="--global"
+  git config "$scope" --remove-section hook.lolcommits 2>/dev/null && done=1
+  if [ "$scope" = "--local" ]; then
+    local hook; hook="$(legacy_hook_path 2>/dev/null)"
+    if [ -n "$hook" ] && [ -f "$hook" ] && grep -q "$HOOK_MARK" "$hook"; then
+      grep -v "$HOOK_MARK" "$hook" >"$hook.tmp" && cat "$hook.tmp" >"$hook" && rm -f "$hook.tmp"; done=1
+    fi
+  fi
+  [ $done = 1 ] && info "lolcommits disabled (${scope#--})." || info "lolcommits was not enabled (${scope#--})."
+}
+
+HOOK_MARK="# added by lolcommits"
+git_version() { git --version | awk '{print $3}'; }
+has_config_hooks() {
+  local v major minor rest; v="$(git_version)"
+  major="${v%%.*}"; rest="${v#*.}"; minor="${rest%%.*}"
+  [ "$major" -gt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -ge 54 ]; }
+}
+legacy_hook_path() {
+  local p; p="$(git rev-parse --git-path hooks/post-commit)" || return 1
+  case "$p" in /*) printf '%s' "$p" ;; *) printf '%s/%s' "$(pwd)" "$p" ;; esac
+}
+check_git_version() {
+  has_config_hooks || printf 'note: git %s has no config-based hooks (2.54+); per-repo hook scripts are used instead.\n' "$(git_version)" >&2
+}
+
+cmd_status() {
+  info "dir:     $LOLDIR"
+  info "global:  $(git config --global --get hook.lolcommits.command 2>/dev/null || echo off)"
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    local h; h="$(legacy_hook_path)"
+    if git config --local --get hook.lolcommits.command >/dev/null 2>&1; then info "repo:    on (git config hook)"
+    elif [ -f "$h" ] && grep -q "$HOOK_MARK" "$h"; then info "repo:    on ($h)"
+    else info "repo:    off"; fi
+    info "paused:  $( [ "$(cfg enabled true)" = false ] && echo yes || echo no )"
+  fi
+  [ -f "$INDEX" ] && info "shots:   $(wc -l <"$INDEX" | tr -d ' ')"
+}
+
+# ---------------------------------------------------------------- capture
+font_file() {
+  local f; f="$(cfg font)"
+  [ -n "$f" ] && [ -f "$f" ] && { printf '%s' "$f"; return; }
+  for f in \
+    /System/Library/Fonts/Supplemental/Impact.ttf \
+    /Library/Fonts/Impact.ttf \
+    /usr/share/fonts/truetype/msttcorefonts/Impact.ttf \
+    /usr/share/fonts/TTF/impact.ttf \
+    /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf \
+    /usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf \
+    /usr/share/fonts/TTF/DejaVuSans-Bold.ttf \
+    /System/Library/Fonts/Supplemental/Arial\ Bold.ttf; do
+    [ -f "$f" ] && { printf '%s' "$f"; return; }
+  done
+  command -v fc-match >/dev/null 2>&1 && fc-match -f '%{file}' 'Impact:bold' 2>/dev/null
+}
+
+input_args() {
+  local dev size
+  # override for testing / exotic setups, e.g. "-f lavfi -i testsrc2=size=1280x720"
+  if [ -n "${LOLCOMMITS_INPUT:-}" ]; then printf '%s\n' $LOLCOMMITS_INPUT; return; fi
+  size="$(cfg size 1280x720)"
+  if [ "$OS" = Darwin ]; then
+    dev="$(cfg device 0)"
+    printf '%s\n' -f avfoundation -pixel_format nv12 -framerate 30 -video_size "$size" -i "$dev:none"
+  else
+    dev="$(cfg device /dev/video0)"
+    printf '%s\n' -f v4l2 -video_size "$size" -i "$dev"
+  fi
+}
+
+# filter-safe quoting for drawtext option values
+fq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# render <input-args...> -- <out.jpg> <sha> <subject> <repo> <branch>
+render() {
+  local args=() a
+  while [ $# -gt 0 ]; do a="$1"; shift; [ "$a" = "--" ] && break; args+=("$a"); done
+  local out="$1" sha="$2" subject="$3" repo="$4" branch="$5"
+  local tmp; tmp="$(mktemp -d)"
+  printf '%s' "$subject" | fold -s -w 34 | head -4 >"$tmp/msg.txt"
+  printf '%s' "$sha" >"$tmp/sha.txt"
+  printf '%s · %s' "$repo" "$branch" >"$tmp/repo.txt"
+  local font; font="$(font_file)"
+  local rc=0
+  if has_drawtext; then
+    # one pass: grab + caption with ffmpeg (typical on Linux distros)
+    local ff=""; [ -n "$font" ] && ff="fontfile=$(fq "$font"):"
+    local common="${ff}fontcolor=white:bordercolor=black:borderw=4"
+    local align=""  # center multi-line captions (ffmpeg 7+)
+    [ "$(ffmpeg -version | head -1 | awk '{print $3}' | sed 's/[^0-9].*//')" -ge 7 ] 2>/dev/null && align=":text_align=C"
+    local vf="scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,"
+    vf+="drawtext=${common}:textfile=$(fq "$tmp/msg.txt"):fontsize=64:line_spacing=6${align}:x=(w-text_w)/2:y=h-text_h-40,"
+    vf+="drawtext=${common}:textfile=$(fq "$tmp/sha.txt"):fontsize=52:x=32:y=24,"
+    vf+="drawtext=${common}:textfile=$(fq "$tmp/repo.txt"):fontsize=28:borderw=2:x=w-text_w-32:y=34"
+    ffmpeg -hide_banner -loglevel error -y "${args[@]}" \
+      -ss "$(cfg delay 1.5)" -frames:v 1 -vf "$vf" -q:v 3 "$out" || rc=$?
+  else
+    # two passes: grab with ffmpeg, caption with ImageMagick (e.g. Homebrew ffmpeg has no freetype)
+    ffmpeg -hide_banner -loglevel error -y "${args[@]}" -ss "$(cfg delay 1.5)" -frames:v 1 \
+      -vf "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720" -q:v 2 "$tmp/raw.jpg" || rc=$?
+    if [ $rc = 0 ]; then
+      local fa=(); [ -n "$font" ] && fa=(-font "$font")
+      # text twice: thick black stroke underneath, clean white fill on top
+      local cap=(-gravity south -pointsize 64 -interline-spacing 2 -annotate +0+40 "@$tmp/msg.txt"
+                 -gravity northwest -pointsize 52 -annotate +32+24 "@$tmp/sha.txt"
+                 -gravity northeast -pointsize 28 -annotate +32+34 "@$tmp/repo.txt")
+      "$(imagick)" "$tmp/raw.jpg" ${fa[@]+"${fa[@]}"} \
+        -fill black -stroke black -strokewidth 8 "${cap[@]}" \
+        -fill white -stroke none "${cap[@]}" \
+        -quality 88 "$out" || rc=$?
+    fi
+  fi
+  rm -rf "$tmp"
+  return $rc
+}
+
+has_drawtext() {
+  [ "${LOLCOMMITS_NO_DRAWTEXT:-}" = 1 ] && return 1
+  ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' drawtext '
+}
+imagick() { command -v magick >/dev/null 2>&1 && echo magick || echo convert; }
+has_imagick() { command -v magick >/dev/null 2>&1 || command -v convert >/dev/null 2>&1; }
+
+cmd_capture() {
+  # called by git as post-commit hook: return immediately, shoot in background
+  [ -n "${LOLCOMMITS_SKIP:-}" ] && return 0
+  [ "$(cfg enabled true)" = false ] && return 0
+  local gitdir; gitdir="$(git rev-parse --git-dir 2>/dev/null)" || return 0
+  # no selfie storm during rebase / cherry-pick sequences
+  [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ] || [ -f "$gitdir/sequencer/todo" ] && return 0
+  command -v ffmpeg >/dev/null 2>&1 || return 0
+
+  local sha subject repo branch
+  sha="$(git rev-parse --short=10 HEAD)"
+  subject="$(git log -1 --format=%s)"
+  repo="$(basename "$(git rev-parse --show-toplevel)")"
+  branch="$(git branch --show-current 2>/dev/null)"; branch="${branch:-detached}"
+
+  mkdir -p "$LOLDIR/$repo"
+  local out="$LOLDIR/$repo/$(date +%Y%m%d-%H%M%S)-$sha.jpg"
+  local now; now="$(iso_now)"
+  local inargs=(); while IFS= read -r a; do inargs+=("$a"); done < <(input_args)
+
+  (
+    if render "${inargs[@]}" -- "$out" "$sha" "$subject" "$repo" "$branch"; then
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "$repo" "$branch" "$sha" \
+        "$(printf '%s' "$subject" | tr '\t' ' ')" "$out" >>"$INDEX"
+    else
+      printf '%s capture failed for %s %s\n' "$now" "$repo" "$sha" >>"$LOG"
+    fi
+  ) </dev/null >>"$LOG" 2>&1 &
+  disown 2>/dev/null || true
+}
+
+cmd_test() {
+  need ffmpeg
+  mkdir -p "$LOLDIR"
+  local out="$LOLDIR/test.jpg"
+  local inargs=(); while IFS= read -r a; do inargs+=("$a"); done < <(input_args)
+  info "📸 say cheese…"
+  render "${inargs[@]}" -- "$out" "c0ffee1337" "lolcommits test shot – looking good" "lolcommits" "main" \
+    || die "capture failed (camera permission? try: lolcommits devices)"
+  info "$out"; open_file "$out"
+}
+
+cmd_devices() {
+  need ffmpeg
+  if [ "$OS" = Darwin ]; then
+    ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 | grep -E 'AVFoundation|\[[0-9]+\]' | sed -n '/video/,/audio/p'
+  elif command -v v4l2-ctl >/dev/null 2>&1; then
+    v4l2-ctl --list-devices
+  else
+    ls /dev/video* 2>/dev/null || info "no /dev/video* devices"
+  fi
+}
+
+cmd_doctor() {
+  local ok=1
+  info "os:     $OS"
+  info "git:    $(git --version | awk '{print $3}')"; check_git_version
+  if command -v ffmpeg >/dev/null 2>&1; then
+    info "ffmpeg: $(ffmpeg -version | head -1 | awk '{print $3}')"
+    if has_drawtext; then info "text:   ffmpeg drawtext"
+    elif has_imagick; then info "text:   ImageMagick ($(imagick)) – ffmpeg has no drawtext"
+    else info "text:   ✗ ffmpeg has no drawtext and ImageMagick is missing (brew/apt install imagemagick)"; ok=0; fi
+  else info "ffmpeg: ✗ missing"; ok=0; fi
+  info "font:   $(font_file || true)"
+  info "dir:    $LOLDIR"
+  [ $ok = 1 ] && info "all good ✓" || exit 1
+}
+
+# ---------------------------------------------------------------- viewing
+require_index() { [ -s "$INDEX" ] || die "no lolcommits yet – commit something!"; }
+
+cmd_last() {
+  require_index
+  local f; f="$(tail -1 "$INDEX" | cut -f6)"
+  info "$f"; open_file "$f"
+}
+
+html_escape() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
+
+cmd_gallery() {
+  require_index
+  local out="$LOLDIR/gallery.html"
+  {
+    cat <<'EOF'
+<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>lolcommits</title>
+<style>
+:root{--bg:#f6f5f2;--fg:#1d1d1f;--mut:#6e6e73;--card:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#121214;--fg:#f2f2f2;--mut:#9a9aa0;--card:#1c1c1f}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif}
+header{padding:24px 16px 8px;max-width:1400px;margin:auto;display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+h1{margin:0;font:900 32px Impact,system-ui,sans-serif;letter-spacing:.5px}
+select,input{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--mut);background:var(--card);color:var(--fg)}
+main{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;padding:16px;max-width:1400px;margin:auto}
+figure{margin:0;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px #0002}
+img{width:100%;display:block;aspect-ratio:16/9;object-fit:cover;cursor:zoom-in}
+figcaption{padding:8px 12px;font-size:13px;color:var(--mut);display:flex;justify-content:space-between;gap:8px}
+code{color:var(--fg)}
+dialog{padding:0;border:0;background:transparent;max-width:95vw}dialog img{max-height:90vh;width:auto;cursor:zoom-out}
+dialog::backdrop{background:#000c}
+</style></head><body>
+<header><h1>lolcommits</h1><span id="n"></span>
+<select id="repo"><option value="">all repos</option></select>
+<input id="q" type="search" placeholder="search messages…"></header>
+<main id="g">
+EOF
+    # newest first
+    sort -r "$INDEX" | while IFS="$(printf '\t')" read -r ts repo branch sha subject file; do
+      [ -f "$file" ] || continue
+      local e_sub e_repo
+      e_sub="$(printf '%s' "$subject" | html_escape)"
+      e_repo="$(printf '%s' "$repo" | html_escape)"
+      printf '<figure data-repo="%s" data-msg="%s"><img loading="lazy" src="file://%s" alt="%s">' \
+        "$e_repo" "$e_sub" "$file" "$e_sub"
+      printf '<figcaption><span><b>%s</b> · %s</span><span><code>%s</code> · <time datetime="%s">%s</time></span></figcaption></figure>\n' \
+        "$e_repo" "$(printf '%s' "$branch" | html_escape)" "$sha" "$ts" "${ts%T*}"
+    done
+    cat <<'EOF'
+</main><dialog id="d"><img id="di" alt=""></dialog>
+<script>
+const figs=[...document.querySelectorAll('figure')],repo=document.getElementById('repo'),q=document.getElementById('q'),n=document.getElementById('n');
+[...new Set(figs.map(f=>f.dataset.repo))].sort().forEach(r=>repo.add(new Option(r,r)));
+function f(){let c=0;const s=q.value.toLowerCase();figs.forEach(x=>{const v=(!repo.value||x.dataset.repo===repo.value)&&x.dataset.msg.toLowerCase().includes(s);x.hidden=!v;c+=v});n.textContent=c+' commits'}
+repo.onchange=q.oninput=f;f();
+const d=document.getElementById('d'),di=document.getElementById('di');
+document.getElementById('g').onclick=e=>{if(e.target.tagName==='IMG'){di.src=e.target.src;d.showModal()}};d.onclick=()=>d.close();
+</script></body></html>
+EOF
+  } >"$out"
+  info "$out"; open_file "$out"
+}
+
+# concat list from index lines on stdin
+concat_list() {
+  local dur="$1"
+  while IFS="$(printf '\t')" read -r _ _ _ _ _ file; do
+    [ -f "$file" ] || continue
+    printf "file '%s'\nduration %s\n" "$(printf '%s' "$file" | sed "s/'/'\\\\''/g")" "$dur"
+  done
+}
+
+cmd_timelapse() {
+  need ffmpeg; require_index
+  local repo="${1:-}" list out
+  list="$(mktemp)"
+  if [ -n "$repo" ]; then
+    sort "$INDEX" | awk -F'\t' -v r="$repo" '$2==r' | concat_list 0.2 >"$list"
+    out="$LOLDIR/timelapse-$repo.mp4"
+  else
+    sort "$INDEX" | concat_list 0.2 >"$list"; out="$LOLDIR/timelapse.mp4"
+  fi
+  [ -s "$list" ] || die "no shots found${repo:+ for $repo}"
+  ffmpeg -hide_banner -loglevel error -y -f concat -safe 0 -i "$list" \
+    -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=25,format=yuv420p" \
+    -c:v libx264 -movflags +faststart "$out" || die "rendering failed"
+  rm -f "$list"; info "$out"; open_file "$out"
+}
+
+cmd_wrapped() {
+  need ffmpeg; require_index
+  local year="${1:-$(date +%Y)}" list out count cols rows
+  list="$(mktemp)"
+  sort "$INDEX" | awk -F'\t' -v y="$year" 'substr($1,1,4)==y' | concat_list 1 >"$list"
+  count=$(( $(wc -l <"$list") / 2 ))
+  [ "$count" -gt 0 ] || die "no lolcommits in $year"
+  cols=1; while [ $((cols * cols)) -lt "$count" ]; do cols=$((cols + 1)); done
+  [ "$cols" -gt 12 ] && cols=12
+  rows=$(( (count + cols - 1) / cols ))
+  out="$LOLDIR/wrapped-$year.jpg"
+  ffmpeg -hide_banner -loglevel error -y -f concat -safe 0 -i "$list" \
+    -vf "scale=320:180:force_original_aspect_ratio=increase,crop=320:180,tile=${cols}x${rows}:padding=4:margin=8:color=black" \
+    -frames:v 1 -q:v 3 "$out" || die "rendering failed"
+  rm -f "$list"
+  info "$year wrapped: $count commits → $out"; open_file "$out"
+}
+
+# ---------------------------------------------------------------- main
+cmd="${1:-help}"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  enable|disable|status|capture|test|last|gallery|timelapse|wrapped|devices|doctor) "cmd_$cmd" "$@" ;;
+  -v|--version|version) info "lolcommits $VERSION" ;;
+  help|-h|--help) usage ;;
+  *) usage >&2; exit 1 ;;
+esac
