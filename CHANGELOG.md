@@ -6,6 +6,7 @@
 - **Auto-share works in new repos:** it failed for a repo whose name nobody had been asked about yet.
 - **Settings › Repos:** a switch flips back if saving fails, and keyboard focus stays on it.
 - **Fewer Drive calls when removing pictures:** unshare and expiry no longer try up to three times to delete a file that isn't there.
+- **Menu bar icon no longer flickers** while a photo is taken.
 
 ## 0.6.1
 
