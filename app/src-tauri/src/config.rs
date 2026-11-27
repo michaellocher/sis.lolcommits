@@ -135,6 +135,31 @@ pub fn get_all(key: &str) -> Vec<String> {
     entries().into_iter().filter(|(k, v)| k.to_lowercase() == key && !v.is_empty()).map(|(_, v)| v).collect()
 }
 
+/// Is `value` one of the values of a multi-valued key?
+pub fn listed(key: &str, value: &str) -> bool {
+    get_all(key).iter().any(|v| v == value)
+}
+
+/// Add `value` to a multi-valued key (on) or remove it (off). Touches only
+/// that value, so a parallel change to another value isn't lost.
+pub fn set_listed(key: &str, value: &str, on: bool) -> Result<(), String> {
+    let k = format!("lolcommits.{key}");
+    if on {
+        if listed(key, value) {
+            return Ok(());
+        }
+        let res = git(&["config", "--global", "--add", &k, value]).map(|_| ());
+        invalidate();
+        return res;
+    }
+    let res = git(&["config", "--global", "--fixed-value", "--unset-all", &k, value]);
+    invalidate();
+    match res {
+        Err(e) if listed(key, value) => Err(e), // exit code 5 (value wasn't there) is fine
+        _ => Ok(()),
+    }
+}
+
 /// Replace all values of a multi-valued key.
 pub fn set_all(key: &str, values: &[String]) -> Result<(), String> {
     let k = format!("lolcommits.{key}");

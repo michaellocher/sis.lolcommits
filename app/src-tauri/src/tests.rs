@@ -1,7 +1,7 @@
 //! End-to-end tests of the app logic against a temporary home: fake Google
 //! Drive for desktop folder, own git config, test pattern instead of the camera.
 use crate::store::Shot;
-use crate::{capture, config, drive, render, share, store};
+use crate::{capture, config, drive, render, share, store, team};
 use std::fs;
 use std::path::PathBuf;
 
@@ -63,20 +63,21 @@ fn full_flow() {
 
     // repo not asked yet → other-repos, repo label blurred, repo hidden in the sidecar
     assert_eq!(share::repo_choice("repo"), None);
-    share::upload(&a).unwrap();
-    assert!(share::upload(&a).is_err(), "no double share");
+    share::upload(&a, false).unwrap();
+    assert!(share::upload(&a, false).is_err(), "no double share");
     let other: Vec<_> = fs::read_dir(target.join("other-repos")).unwrap().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
-    assert_eq!(other.len(), 2, "jpg + sidecar: {other:?}");
-    assert!(other.iter().all(|f| f.starts_with("20261125-juergen-gross-")), "{other:?}");
-    let side = other.iter().find(|f| f.ends_with(".tsv")).unwrap();
-    let meta = fs::read_to_string(target.join("other-repos").join(side)).unwrap();
+    assert_eq!(other.len(), 1, "only the picture, the sidecar is in .meta/: {other:?}");
+    assert!(other[0].starts_with("20261125-juergen-gross-") && other[0].ends_with(".jpg"), "{other:?}");
+    let side = other[0].replace(".jpg", ".tsv");
+    let meta = fs::read_to_string(target.join(".meta/other-repos").join(&side)).unwrap();
     assert_eq!(meta, "2026-11-25\tJürgen Groß\t-\tfirst: tabs and stuff\n");
 
     // repo allowed by name → its own folder, not blurred
     share::set_repo_choice("repo", true).unwrap();
-    share::upload(&b).unwrap();
+    share::upload(&b, false).unwrap();
     let in_repo = fs::read_dir(target.join("repo")).unwrap().count();
-    assert_eq!(in_repo, 2);
+    assert_eq!(in_repo, 1);
+    assert_eq!(fs::read_dir(target.join(".meta/repo")).unwrap().count(), 1);
     let team = share::team().unwrap();
     assert_eq!(team.len(), 2);
     assert!(team.iter().all(|r| r.mine && r.name == "Jürgen Groß"));
@@ -84,30 +85,44 @@ fn full_flow() {
     assert!(store::shots().iter().all(|s| s.shared));
 
     // same day: the most recently shared picture comes first, not the folder order ("repo" > "other-repos")
-    let first_jpg = target.join("other-repos").join(other.iter().find(|f| f.ends_with(".jpg")).unwrap());
+    let first_jpg = target.join("other-repos").join(&other[0]);
     let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
     fs::File::options().write(true).open(&first_jpg).unwrap().set_modified(later).unwrap();
     let order: Vec<_> = share::team().unwrap().into_iter().map(|r| r.subject).collect();
     assert_eq!(order, ["first: tabs and stuff", "second"]);
 
-    // a teammate's picture in the same folder is not mine and survives my unshare-all
+    // a teammate's picture in the same folder is not mine and survives my unshare-all;
+    // shared by an older version, so its sidecar is still next to the picture
     fs::write(target.join("repo/20261124-kim-0000abcd.jpg"), fs::read(&a.file).unwrap()).unwrap();
     fs::write(target.join("repo/20261124-kim-0000abcd.tsv"), "2026-11-24\tKim\trepo\tship it\n").unwrap();
     assert_eq!(share::team().unwrap().iter().filter(|r| !r.mine).count(), 1);
+
+    // my own old-style sidecars move into .meta/ (not the teammate's), the picture still shows
+    fs::write(target.join("repo/20201231-juergen-gross-00000002.jpg"), fs::read(&a.file).unwrap()).unwrap();
+    fs::write(target.join("repo/20201231-juergen-gross-00000002.tsv"), "2020-12-31\tJürgen Groß\trepo\tlegacy\n").unwrap();
+    assert_eq!(share::move_old_sidecars().unwrap(), 1);
+    assert!(target.join(".meta/repo/20201231-juergen-gross-00000002.tsv").is_file());
+    assert!(!target.join("repo/20201231-juergen-gross-00000002.tsv").exists());
+    assert!(target.join("repo/20261124-kim-0000abcd.tsv").is_file());
+    assert_eq!(share::move_old_sidecars().unwrap(), 0, "nothing left to move");
+    assert!(share::team().unwrap().iter().any(|r| r.subject == "legacy"));
+    assert!(!share::team().unwrap().iter().any(|r| r.file.contains(".meta")), ".meta/ is not a repo folder");
 
     // no expiry by default: an old picture of mine survives the next upload
     fs::write(target.join("repo/20200101-juergen-gross-00000001.jpg"), b"x").unwrap();
     fs::write(target.join("repo/20200101-juergen-gross-00000001.tsv"), "2020-01-01\tJürgen Groß\trepo\told\n").unwrap();
     let c = shoot("third", "20261125-100200-abc1234567");
-    share::upload(&c).unwrap();
+    share::upload(&c, false).unwrap();
     assert!(target.join("repo/20200101-juergen-gross-00000001.jpg").exists(), "default must not expire shared pictures");
 
     // with an expiry set it is removed (only mine)
     config::set("share.retention", "30").unwrap();
     let d = shoot("fourth", "20261125-100300-abc1234567");
-    share::upload(&d).unwrap();
+    share::upload(&d, false).unwrap();
     assert!(!target.join("repo/20200101-juergen-gross-00000001.jpg").exists());
-    assert!(!target.join("repo/20200101-juergen-gross-00000001.tsv").exists());
+    assert!(!target.join("repo/20200101-juergen-gross-00000001.tsv").exists(), "old-style sidecar goes too");
+    assert!(!target.join("repo/20201231-juergen-gross-00000002.jpg").exists());
+    assert!(!target.join(".meta/repo/20201231-juergen-gross-00000002.tsv").exists(), "sidecar in .meta/ goes too");
     assert!(target.join("repo/20261124-kim-0000abcd.jpg").exists());
     config::set("share.retention", "").unwrap();
 
@@ -130,13 +145,96 @@ fn full_flow() {
     // unshare one: jpg and sidecar go, empty folder too
     share::unshare(&a.file).unwrap();
     assert!(!target.join("other-repos").exists());
+    assert!(!target.join(".meta/other-repos").exists());
     assert!(!store::find(&a.file).unwrap().shared);
 
     // unshare all removes only my pictures
     share::unshare_all().unwrap();
     let left: Vec<_> = fs::read_dir(target.join("repo")).unwrap().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
     assert_eq!(left.len(), 2, "only Kim's picture is left: {left:?}");
+    assert!(!target.join(".meta/repo").exists(), "my sidecars in .meta/ are gone too");
     assert!(store::shared_rows().is_empty());
+
+    // Settings › Repos › Share off: out of Review, can't be shared, back when turned on again
+    let before = store::to_review(&store::shots());
+    assert!(before > 0);
+    config::set_listed(share::NEVER, "repo", true).unwrap();
+    assert!(!share::may_share("repo") && share::may_share("other"));
+    assert_eq!(store::to_review(&store::shots()), 0);
+    assert!(share::upload(&b, false).unwrap_err().contains("sharing is off"));
+    config::set_listed(share::NEVER, "repo", false).unwrap();
+    assert_eq!(store::to_review(&store::shots()), before);
+
+    // Settings › Repos › Photos off: a list of repo names, other values untouched
+    config::set_listed(share::SKIP, "client.app", true).unwrap();
+    config::set_listed(share::SKIP, "repo", true).unwrap();
+    config::set_listed(share::SKIP, "repo", true).unwrap();
+    assert_eq!(config::get_all(share::SKIP), vec!["client.app", "repo"], "no duplicates");
+    assert!(!share::photos_on("repo") && !share::photos_on("client.app") && share::photos_on("client-app"));
+    config::set_listed(share::SKIP, "repo", false).unwrap();
+    assert_eq!(config::get_all(share::SKIP), vec!["client.app"]);
+    config::set_listed(share::SKIP, "client.app", false).unwrap();
+
+    // team settings: one file per repo in .meta/repos/, a hidden name only as a hash
+    share::set_repo_choice("acme-shop", false).unwrap();
+    share::set_repo_choice("repo", true).unwrap();
+    let team_files = || -> String {
+        fs::read_dir(target.join(".meta/repos")).unwrap().flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string() + ":" + &fs::read_to_string(e.path()).unwrap()).collect()
+    };
+    assert!(!team_files().contains("acme-shop"), "{}", team_files());
+    assert!(team_files().contains("show\trepo"), "shown names stay readable: {}", team_files());
+    assert_eq!(share::repo_choice("acme-shop"), Some(false));
+    // the first answer becomes the team's; a later one doesn't overrule it
+    assert!(share::answer_repo_choice("acme-shop", true).unwrap() == false, "the team hides it");
+    assert_eq!(share::repo_choice("acme-shop"), Some(false));
+    assert!(share::answer_repo_choice("new-repo", true).unwrap());
+    assert_eq!(team::fresh_repo_choice("new-repo").unwrap(), Some(true));
+    // a Drive conflict copy from two answers at once: hide wins
+    let new_file = fs::read_dir(target.join(".meta/repos")).unwrap().flatten()
+        .find(|e| fs::read_to_string(e.path()).unwrap() == "show\tnew-repo\n").unwrap().path();
+    let copy = new_file.with_file_name(format!("{} (1)", new_file.file_name().unwrap().to_string_lossy()));
+    fs::write(&copy, "hide\n").unwrap();
+    assert_eq!(share::repo_choice("new-repo"), Some(false));
+    share::set_repo_choice("new-repo", true).unwrap();
+    assert!(!copy.exists(), "a deliberate choice clears conflict copies");
+    assert_eq!(share::repo_choice("new-repo"), Some(true));
+    // changing it in Settings changes it for everyone
+    share::set_repo_choice("new-repo", false).unwrap();
+    assert_eq!(team::fresh_repo_choice("new-repo").unwrap(), Some(false));
+
+    // choices from before team settings: published once, the stricter one wins
+    let names = config::lol_dir().join("repo-names.tsv");
+    let before_names = fs::read_to_string(&names).unwrap();
+    fs::write(&names, before_names.clone() + "only-mine\tshow\nconflict\tshow\n").unwrap();
+    team::set_repo_choice("conflict", false).unwrap();
+    team::set_repo_choice("repo", false).unwrap(); // a teammate hid it meanwhile; locally it is shown
+    let n = team::publish_local_choices().unwrap();
+    assert_eq!(team::fresh_repo_choice("only-mine").unwrap(), Some(true));
+    assert_eq!(team::fresh_repo_choice("conflict").unwrap(), Some(false), "hide wins");
+    assert_eq!(team::fresh_repo_choice("repo").unwrap(), Some(false), "hide wins");
+    assert_eq!(n, 1, "only the repo the team didn't know");
+    assert_eq!(team::publish_local_choices().unwrap(), 0, "once per team gallery");
+    // the team's choice wins over this computer's, also for the upload
+    assert_eq!(share::repo_choice("repo"), Some(false));
+    let e = shoot("team hides it", "20261125-100500-abc1234567");
+    share::upload(&e, false).unwrap();
+    assert!(store::shared_rows().iter().any(|(l, r)| l == &e.file && r.starts_with("other-repos/")), "{:?}", store::shared_rows());
+    share::unshare(&e.file).unwrap();
+    share::set_repo_choice("repo", true).unwrap();
+
+    // retention: the team's value is a maximum
+    config::set("share.retention", "").unwrap();
+    team::set_retention(Some(30)).unwrap();
+    assert_eq!(share::retention_days(), 30);
+    config::set("share.retention", "60").unwrap();
+    assert_eq!(share::retention_days(), 30, "can't keep longer than the team");
+    config::set("share.retention", "10").unwrap();
+    assert_eq!(share::retention_days(), 10, "may delete earlier");
+    team::set_retention(None).unwrap();
+    assert!(!target.join(".meta/retention").exists());
+    assert_eq!(share::retention_days(), 10);
+    config::set("share.retention", "").unwrap();
 
     // review: swiping left keeps a picture private, undo brings it back
     store::set_private(&b.file, true).unwrap();

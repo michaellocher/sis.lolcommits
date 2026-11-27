@@ -46,18 +46,22 @@ Each card shows the picture exactly as it would be uploaded.
 - **Swipe left / ← / ✕:** keeps it on your computer, and it won't come up again.
 - **⌘Z:** undoes the last swipe.
 
-**Sorted by repo:** the first time you share from a repo, the app asks whether your team may see its name.
+**Sorted by repo:** the first time anyone in the team shares from a repo, the app asks whether the team may see its name.
 - **Yes:** pictures go to `<repo>/` and the repo label stays readable.
 - **No:** they go to `other-repos/` with the repo label and commit hash blurred.
 
-You can change the choice per repo in Settings. It applies to pictures you share after that.
+The answer is a team setting: it is stored in the shared drive and counts for everyone, so a client repo one person hides never shows up by name through someone else. You can change it per repo in Settings › Repos; that changes it for the whole team and applies to pictures shared after that.
 
 **What gets uploaded:**
 - the picture without metadata, with the hash and repo label blurred unless the repo is shown by name
-- one small sidecar file per picture: the date (no time of day), your name, the repo (if shown) and the commit message
+- one small sidecar file per picture in the hidden `.meta/` folder: the date (no time of day), your name, the repo (if shown) and the commit message
 
 Files are named `<date>-<person>-<random>`, so several people can share into the same folder without conflicts.
-Shared pictures stay until you take them back, unless you set an expiry in Settings.
+Shared pictures stay until you take them back, unless you set an expiry in Settings. The team can also set a limit there ("Team: shared pictures stay at most"): nobody keeps them longer, anyone may remove theirs earlier.
+
+**Team settings** live in the hidden `.meta/` folder of the team gallery, one small file each, so two people changing something at once don't create Drive conflict copies:
+- `.meta/repos/<sha256 of the repo name>`: `show<TAB><name>` or `hide`. A hidden repo appears only as a hash. That keeps the name out of sight, but someone with access to the drive who guesses a name can check it against the hashes. If two people answer at the same time and Drive keeps both files, "hide" wins.
+- `.meta/retention`: the team's limit in days.
 Your team should agree on a period, see [PRIVACY.md](PRIVACY.md).
 
 ### Google sign-in without Drive for desktop
@@ -128,6 +132,7 @@ Everything is plain git config, shared by the app and the command line:
 | `lolcommits.dir` | `~/.lolcommits` | where pictures go |
 | `lolcommits.enabled` | `true` | `false` pauses without removing the hook |
 | `lolcommits.folders` | – (all) | photos only in repos below these folders, multi-valued (`--add`) |
+| `lolcommits.skipRepo` | – | repo names without photos, in every clone; multi-valued (`--add`), Settings › Repos › Photos |
 | `lolcommits.pausedUntil` | – | unix time, set by "Pause" in the menu bar |
 | `lolcommits.retention` | keep | delete local pictures after N days |
 | `lolcommits.share.target` | off | a folder (Drive for desktop, NAS) or `rclone:<remote>:<path>` |
@@ -135,9 +140,11 @@ Everything is plain git config, shared by the app and the command line:
 | `lolcommits.share.retention` | `0` (keep) | delete your shared pictures after N days |
 | `lolcommits.share.googleClientId` / `…Secret` | – | your team's Google OAuth client for "Sign in with Google" |
 | `lolcommits.share.auto` | `false` | upload every photo without review (repos not asked yet stay hidden) |
+| `lolcommits.neverShare` | – | repo names whose photos are never shared or reviewed; multi-valued (`--add`), Settings › Repos › Share |
 | `lolcommits.update.auto` | `true` | look for app updates on GitHub every few hours |
+| `lolcommits.remind` | `true` | once a day, from 10:00, a notification when photos wait in Review (app, with a team gallery) |
 
-Per-repo choices live in `~/.lolcommits/repo-names.tsv` (`repo`, tab, `show` or `hide`).
+This computer's answers to "show the repo name?" live in `~/.lolcommits/repo-names.tsv` (`repo`, tab, `show` or `hide`). With a team gallery the team's choice in `.meta/repos/` wins; your answers count only for repos the team hasn't decided yet, and are published to the team once.
 
 Pictures land in `~/.lolcommits/<repo>/<timestamp>-<sha>.jpg`, along with an `index.tsv` (time, repo, branch, sha, subject, file).
 Failures are logged to `~/.lolcommits/lolcommits.log`.
